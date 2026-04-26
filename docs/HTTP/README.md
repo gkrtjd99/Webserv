@@ -5,6 +5,7 @@
 ## 문서 목록
 
 - `request-parser-design.md`: `HttpMethod`, `HttpRequest`, `HttpParser`, `matchServer`, `matchLocation` 설계
+- `runtime-policy.md`: keep-alive, response 전송 방식, directory listing, error page, timeout, max connection 정책
 
 ## 기준
 
