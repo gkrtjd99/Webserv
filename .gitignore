@@ -3,3 +3,7 @@ tester
 en.subject.pdf
 en.subject.txt
 .DS_Store
+
+TODO.md
+compile_commands.json
+.obsidian/

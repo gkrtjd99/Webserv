@@ -43,9 +43,9 @@
 
 2. 충돌이 적은 세 갈래로 분리
 
-    - A: HTTP parser와 Request 모델
-    - B: Config parser와 설정 검증
-    - C: Server socket/event loop 뼈대와 간단한 Response 출력
+    - A: HTTP parser와 Request 모델 - dong-hki
+    - B: Config parser와 설정 검증 - yunhpark
+    - C: Server socket/event loop 뼈대와 간단한 Response 출력 - hakslee
 
 3. 통합 이후 기능 단위로 재분배
 
