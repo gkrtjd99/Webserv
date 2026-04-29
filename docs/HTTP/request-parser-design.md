@@ -45,42 +45,168 @@ flowchart TD
 
 `READING_BODY` 상태로 전환된 직후에는 Parser가 body를 처리하기 전에 멈춘다. Connection은 이 시점에 `Host`와 `path`를 기준으로 routing을 수행하고, matched server/location 기준 body limit을 계산한 뒤 `setBodyLimit()`을 호출한다.
 
-## 3. HttpRequest 생성 상태도
+## 3. HttpParser / HttpRequest 상태도
 
-`HttpRequest` 객체 자체는 외부에 상태 enum을 노출하지 않는다. 아래 상태도는 `HttpParser`가 `HttpRequest`를 채워가는 내부 흐름이다.
+`HttpParser`는 실제 상태 머신이다. `HttpRequest` 객체 자체는 외부에 상태 enum을 노출하지 않고, Parser가 만든 결과를 저장하는 모델로만 동작한다.
+
+### HttpParser 상태 머신
+
+상태도는 `HttpParser::State` 값이 언제 바뀌는지만 보여준다. `feed()`는 상태 자체가 아니라 입력을 누적하고 현재 상태에 맞는 내부 파서를 호출하는 진입점이다.
 
 ```mermaid
 stateDiagram-v2
-    state "Empty request" as Empty
-    state "Request line parsed" as RequestLineParsed
-    state "Headers parsing" as HeadersParsing
-    state "Headers complete" as HeadersComplete
-    state "Body reading" as BodyReading
-    state "Done request" as Done
-    state "Parse failed" as Failed
+    direction LR
 
-    [*] --> Empty
+    [*] --> READING_HEAD: HttpParser() 또는 reset()
 
-    Empty --> RequestLineParsed: setRequestLine
-    RequestLineParsed --> HeadersParsing: first header line
-    HeadersParsing --> HeadersParsing: addHeader
-    HeadersParsing --> HeadersComplete: empty CRLF line
+    READING_HEAD --> READING_HEAD: head delimiter not found
+    READING_HEAD --> DONE: valid head and no body
+    READING_HEAD --> READING_BODY: valid head and body expected
+    READING_HEAD --> FAILED: invalid request line/header/version/host
 
-    HeadersComplete --> Done: no body
-    HeadersComplete --> BodyReading: content length
-    HeadersComplete --> BodyReading: chunked
+    READING_BODY --> READING_BODY: body incomplete
+    READING_BODY --> DONE: body complete
+    READING_BODY --> FAILED: invalid body or too large
 
-    BodyReading --> BodyReading: appendBody
-    BodyReading --> Done: body complete
+    DONE --> READING_HEAD: reset()
+    FAILED --> READING_HEAD: reset()
+```
 
-    Empty --> Failed: invalid request line
-    RequestLineParsed --> Failed: invalid version or URI
-    HeadersParsing --> Failed: malformed header
-    HeadersComplete --> Failed: invalid body headers
-    BodyReading --> Failed: invalid body
+### `feed()` 진입 흐름
 
-    Done --> [*]
-    Failed --> [*]
+`feed()`는 모든 raw bytes가 들어오는 단일 입구다. 입력을 `_buffer`에 붙인 뒤, 현재 상태에 따라 head parser 또는 body parser를 호출한다.
+
+```mermaid
+flowchart TD
+    A["feed(data, len)"] --> B{"state is DONE or FAILED?"}
+    B -->|"yes"| C["return without parsing"]
+    B -->|"no"| D["_buffer.append(data, len)"]
+    D --> E{"current state"}
+    E -->|"READING_HEAD"| F["parseHeadIfReady()"]
+    E -->|"READING_BODY"| G["parseBodyIfReady()"]
+    F --> H["state may stay READING_HEAD, become DONE, READING_BODY, or FAILED"]
+    G --> I["state may stay READING_BODY, become DONE, or FAILED"]
+```
+
+### 상태별 내부 처리
+
+| 상태 | 호출되는 주요 메서드 | 결과 |
+| --- | --- | --- |
+| `READING_HEAD` | `parseHeadIfReady()` | `\r\n\r\n`이 없으면 상태를 유지한다. |
+| `READING_HEAD` | `parseStartLine()`, `parseHeaderLine()`, `validateHttpVersion()`, `parseHostHeader()` | head가 유효하면 `decideBodyMode()`로 넘어간다. 중간에 오류가 있으면 `FAILED`가 된다. |
+| `READING_HEAD` | `decideBodyMode()` | body가 없으면 `DONE`, body가 있으면 `READING_BODY`가 된다. |
+| `READING_BODY` | `setBodyLimit()`, `parseBodyIfReady()` | body가 부족하면 상태를 유지하고, 완료되면 `DONE`이 된다. |
+| `READING_HEAD` / `READING_BODY` | `fail(status)` | 오류가 있으면 `FAILED`가 되고 `_errorStatus`에 HTTP status를 저장한다. |
+| `DONE` / `FAILED` | `reset()` | Parser와 내부 `HttpRequest`를 초기화하고 `READING_HEAD`로 돌아간다. |
+
+### Head parsing 흐름
+
+```mermaid
+flowchart TD
+    A["parseHeadIfReady()"] --> B{"_buffer contains CRLF CRLF?"}
+    B -->|"no"| C["return; state stays READING_HEAD"]
+    B -->|"yes"| D["head = bytes before CRLF CRLF"]
+    D --> E["_buffer = bytes after CRLF CRLF"]
+    E --> F["parseStartLine(first line)"]
+    F --> G{"failed?"}
+    G -->|"yes"| Z["FAILED"]
+    G -->|"no"| H["parseHeaderLine(each remaining line)"]
+    H --> I{"failed?"}
+    I -->|"yes"| Z
+    I -->|"no"| J["validateHttpVersion()"]
+    J --> K["parseHostHeader()"]
+    K --> L["decideBodyMode()"]
+    L -->|"no body"| M["DONE"]
+    L -->|"body exists"| N["READING_BODY"]
+```
+
+### Body parsing 흐름
+
+`READING_BODY`에서는 head parsing이 끝난 상태다. Parser는 Connection이 `setBodyLimit(n)`을 호출하기 전에는 body를 확정 처리하지 않는다.
+
+```mermaid
+flowchart TD
+    A["READING_BODY"] --> B{"body limit is known?"}
+    B -->|"no"| C["wait; state stays READING_BODY"]
+    B -->|"yes"| D["parseBodyIfReady()"]
+    D --> E{"body size over limit?"}
+    E -->|"yes"| F["FAILED / 413"]
+    E -->|"no"| G{"enough body bytes?"}
+    G -->|"no"| H["stay READING_BODY"]
+    G -->|"yes"| I["setBody() or appendBody()"]
+    I --> J["DONE"]
+```
+
+### HttpRequest 생성 흐름
+
+아래 흐름도는 `HttpRequest`의 실제 enum 상태가 아니라, `HttpParser`가 `HttpRequest`의 setter를 호출해 데이터를 채워가는 순서다. 요청 검증 실패는 `HttpParser::FAILED`로 처리되며 `HttpRequest` 자체의 상태가 아니다.
+
+```mermaid
+flowchart TD
+    A["HttpRequest constructed<br/>or clear() called"]
+    B["setRequestLine(method, uri, version)<br/>method, uri, version 저장<br/>splitUri()로 path/query 분리"]
+    C["addHeader(name, value)<br/>header key lowercase 저장"]
+    D["setHost(host)<br/>optional setHostPort(port)"]
+    E{"request has body?"}
+    F["Complete request<br/>body is empty"]
+    G["Body reading"]
+    H["appendBody(chunk)<br/>partial body 누적"]
+    I["setBody(body)<br/>or final appendBody(chunk)"]
+    J["Complete request<br/>body is complete"]
+
+    A --> B
+    B --> C
+    C --> C
+    C --> D
+    D --> E
+    E -->|"no"| F
+    E -->|"yes"| G
+    G -->|"more chunks"| H
+    H --> G
+    G -->|"last chunk or full Content-Length body"| I
+    I --> J
+```
+
+### Parser와 Request 메서드 호출 흐름
+
+```mermaid
+sequenceDiagram
+    participant Conn as Connection
+    participant Parser as HttpParser
+    participant Req as HttpRequest
+
+    Conn->>Parser: feed(data, len)
+    Parser->>Parser: _buffer.append(data, len)
+    Parser->>Parser: parseHeadIfReady()
+
+    Parser->>Parser: parseStartLine(line)
+    Parser->>Req: setRequestLine(method, uri, version)
+
+    loop each header line
+        Parser->>Parser: parseHeaderLine(line)
+        Parser->>Req: addHeader(name, value)
+    end
+
+    Parser->>Parser: validateHttpVersion()
+    Parser->>Parser: parseHostHeader()
+    Parser->>Req: setHost(host)
+
+    opt Host has port
+        Parser->>Req: setHostPort(port)
+    end
+
+    Parser->>Parser: decideBodyMode()
+
+    alt no body
+        Parser->>Parser: _state = DONE
+    else body exists
+        Parser->>Parser: _state = READING_BODY
+        Conn->>Parser: setBodyLimit(n)
+        Conn->>Parser: feed(body bytes, len)
+        Parser->>Parser: parseBodyIfReady()
+        Parser->>Req: setBody(body) or appendBody(data)
+        Parser->>Parser: _state = DONE
+    end
 ```
 
 ## 4. 필요한 파일
@@ -404,13 +530,16 @@ const LocationConfig* matchLocation(const ServerConfig& server,
 ### `matchLocation` 규칙
 
 1. 모든 location의 `path`를 후보로 본다.
-2. request path가 location path로 시작하고, prefix가 끝나는 위치의 다음 문자가 `/`이거나 문자열 끝이면 match로 본다.
-3. 여러 개가 match되면 가장 긴 location path를 고른다.
-4. 하나도 match되지 않으면 `NULL`을 반환한다.
+2. location path가 `/`이면 fallback location으로 본다. `/`는 `/`로 시작하는 모든 request path와 match된다.
+3. `/`가 아닌 location은 request path가 location path로 시작하고, prefix가 끝나는 위치의 다음 문자가 `/`이거나 문자열 끝이면 match로 본다.
+4. 여러 개가 match되면 가장 긴 location path를 고른다. 따라서 더 구체적인 location이 있으면 `/` fallback보다 우선한다.
+5. 하나도 match되지 않으면 `NULL`을 반환한다. `/` location이 설정되어 있으면 정상적인 absolute request path는 fallback으로라도 match된다.
 
 nginx의 순수 prefix matching과 달리 path segment boundary를 확인한다.
 
 ```text
+/            matches /
+/            matches /upload/file.txt
 /upload      matches /upload
 /upload      matches /upload/file.txt
 /upload      does not match /upload2

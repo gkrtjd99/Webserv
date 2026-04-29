@@ -33,6 +33,13 @@ public:
 	void appendBody(const std::string& data);
 	void clear();
 
+	const std::string& getHost() const;
+	int getHostPort() const;
+	bool hasHostPort() const;
+
+	void setHost(const std::string& host);
+	void setHostPort(int port);
+
 private:
 	HttpMethod _method;
 	std::string _methodString;
@@ -42,6 +49,10 @@ private:
 	std::string _version;
 	std::map<std::string, std::string> _headers;
 	std::string _body;
+
+	std::string _host;
+	int _hostPort;
+	bool _hasHostPort;
 
 	void splitUri();
 };
