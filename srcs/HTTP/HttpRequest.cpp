@@ -1,41 +1,8 @@
 #include "HttpRequest.hpp"
 #include "HttpMethod.hpp"
+#include "HttpHelper.hpp"
 
 #include <cctype>
-
-namespace
-{
-	std::string toLowerString(const std::string& s)
-	{
-		std::string result;
-
-		result.reserve(s.size());
-		for(std::size_t i = 0; i < s.size(); ++i)
-		{
-			result += static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
-		}
-
-		return result;
-	}
-
-	std::string trim(const std::string& s)
-	{
-		std::size_t begin = 0;
-		std::size_t end = s.size();
-
-		while(begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin])))
-		{
-			begin++;
-		}
-
-		while(end > begin && std::isspace(static_cast<unsigned char>(s[end - 1])))
-		{
-			end--;
-		}
-
-		return s.substr(begin, end - begin);
-	}
-}
 
 HttpRequest::HttpRequest()
 {
@@ -74,7 +41,7 @@ const std::string& HttpRequest::version() const
 
 bool HttpRequest::hasHeader(const std::string& name) const
 {
-	return _headers.find(toLowerString(name)) != _headers.end();
+	return _headers.find(HttpHelper::toLowerString(name)) != _headers.end();
 }
 
 const std::string& HttpRequest::header(const std::string& name) const
@@ -82,7 +49,7 @@ const std::string& HttpRequest::header(const std::string& name) const
 	static const std::string empty;
 	std::map<std::string, std::string>::const_iterator it;
 
-	it = _headers.find(toLowerString(name));
+	it = _headers.find(HttpHelper::toLowerString(name));
 	if(it == _headers.end())
 	{
 		return empty;
@@ -115,7 +82,7 @@ void HttpRequest::setRequestLine(const std::string& method,
 void HttpRequest::addHeader(const std::string& name,
 				const std::string& value)
 {
-	_headers[toLowerString(trim(name))] = trim(value);
+	_headers[HttpHelper::toLowerString(HttpHelper::trim(name))] = HttpHelper::trim(value);
 }
 
 void HttpRequest::setBody(const std::string& body)
@@ -138,6 +105,35 @@ void HttpRequest::clear()
 	_version.clear();
 	_headers.clear();
 	_body.clear();
+	_host.clear();
+	_hostPort = 0;
+	_hasHostPort = false;
+}
+
+const std::string& HttpRequest::getHost() const
+{
+	return _host;
+}
+
+int HttpRequest::getHostPort() const
+{
+	return _hostPort;
+}
+
+bool HttpRequest::hasHostPort() const
+{
+	return _hasHostPort;
+}
+
+void HttpRequest::setHost(const std::string& host)
+{
+	_host = host;
+}
+
+void HttpRequest::setHostPort(int port)
+{
+	_hostPort = port;
+	_hasHostPort = true;
 }
 
 void HttpRequest::splitUri()

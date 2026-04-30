@@ -34,7 +34,7 @@ const char* httpMethodToString(HttpMethod method)
 	return "UNKNOWN";
 }
 
-bool isSupportedMethod(HttpMethod method)
+bool isSupportedHttpMethod(HttpMethod method)
 {
 	return method == HTTP_GET
 			|| method == HTTP_POST
