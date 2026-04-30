@@ -13,6 +13,6 @@ enum HttpMethod
 
 HttpMethod parseHttpMethod(const std::string& method);
 const char* httpMethodToString(HttpMethod method);
-bool isSupportedMethod(HttpMethod method);
+bool isSupportedHttpMethod(HttpMethod method);
 
 #endif

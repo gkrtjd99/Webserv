@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <cctype>
+#include <limits>
 
 HttpParser::HttpParser()
 {
@@ -133,7 +134,7 @@ void HttpParser::parseStartLine(const std::string& line)
 	}
 
 	_request.setRequestLine(method, uri, version);
-	if(!isSupportedMethod(_request.method()))
+	if(!isSupportedHttpMethod(_request.method()))
 	{
 		fail(501);
 	}
@@ -286,7 +287,17 @@ void HttpParser::decideBodyMode()
 				fail(400);
 				return;
 			}
-			_contentLength = _contentLength * 10 + (value[i] - '0');
+
+			std::size_t digit = static_cast<std::size_t>(value[i] - '0');
+			std::size_t maxValue = std::numeric_limits<std::size_t>::max();
+
+			if(_contentLength > (maxValue - digit) / 10)
+			{
+				fail(413);
+				return;
+			}
+
+			_contentLength = _contentLength * 10 + digit;
 		}
 
 		if(_contentLength == 0)
