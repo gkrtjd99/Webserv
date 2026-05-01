@@ -1,8 +1,7 @@
 #include "HttpRequest.hpp"
 #include "HttpMethod.hpp"
 #include "HttpHelper.hpp"
-
-#include <cctype>
+#include "HttpSyntax.hpp"
 
 HttpRequest::HttpRequest()
 {
@@ -68,7 +67,7 @@ const std::string& HttpRequest::body() const
 	return _body;
 }
 
-void HttpRequest::setRequestLine(const std::string& method,
+bool HttpRequest::setRequestLine(const std::string& method,
 					const std::string& uri,
 					const std::string& version)
 {
@@ -76,7 +75,7 @@ void HttpRequest::setRequestLine(const std::string& method,
 	_method = parseHttpMethod(method);
 	_uri = uri;
 	_version = version;
-	splitUri();
+	return splitUri();
 }
 
 void HttpRequest::addHeader(const std::string& name,
@@ -136,18 +135,45 @@ void HttpRequest::setHostPort(int port)
 	_hasHostPort = true;
 }
 
-void HttpRequest::splitUri()
+bool HttpRequest::splitUri()
 {
 	std::size_t pos = _uri.find('?');
+	std::string rawPath;
+	std::string decodedPath;
+
+	if(_uri.empty() || _uri.find('#') != std::string::npos
+			|| _uri[0] != '/')
+	{
+		_path.clear();
+		_query.clear();
+		return false;
+	}
 
 	if(pos == std::string::npos)
 	{
-		_path = _uri;
+		rawPath = _uri;
 		_query.clear();
 	}
+
 	else
 	{
-		_path = _uri.substr(0, pos);
+		rawPath = _uri.substr(0, pos);
 		_query = _uri.substr(pos + 1);
 	}
+
+	if(rawPath.empty())
+	{
+		rawPath = "/";
+	}
+
+	if(!HttpSyntax::percentDecodePath(rawPath, decodedPath)
+			|| !HttpSyntax::normalizeDecodedPath(decodedPath, _path)
+			|| !HttpSyntax::percentTripletsAreValid(_query))
+	{
+		_path.clear();
+		_query.clear();
+		return false;
+	}
+
+	return true;
 }

@@ -1,10 +1,19 @@
 #include "HttpParser.hpp"
 #include "HttpMethod.hpp"
 #include "HttpHelper.hpp"
+#include "HttpSyntax.hpp"
 
-#include <sstream>
 #include <cctype>
 #include <limits>
+
+namespace
+{
+	const std::size_t MAX_HEADER_SECTION_SIZE = 16 * 1024;
+	const std::size_t MAX_HEADER_FIELD_LINE_SIZE = 4 * 1024;
+	const std::size_t MAX_HEADER_COUNT = 100;
+	const std::size_t MAX_REQUEST_TARGET_SIZE = 2 * 1024;
+	const std::size_t MAX_CHUNK_SIZE_LINE_SIZE = 1024;
+}
 
 HttpParser::HttpParser()
 {
@@ -13,12 +22,31 @@ HttpParser::HttpParser()
 
 void HttpParser::reset()
 {
+	resetState(true);
+}
+
+void HttpParser::resetPreservingBuffer()
+{
+	resetState(false);
+	parseHeadIfReady();
+	if(_state == READING_BODY)
+	{
+		parseBodyIfReady();
+	}
+}
+
+void HttpParser::resetState(bool clearBuffer)
+{
 	_state = READING_HEAD;
-	_errorStatus =0;
-	_buffer.clear();
+	_errorStatus = 0;
+	if(clearBuffer)
+	{
+		_buffer.clear();
+	}
 	_request.clear();
 	_contentLength = 0;
 	_bodyLimit = 0;
+	_headerCount = 0;
 	_chunked = false;
 	_hasBodyLimit = false;
 }
@@ -49,6 +77,15 @@ void HttpParser::parseHeadIfReady()
 
 	if(pos == std::string::npos)
 	{
+		if(_buffer.size() > MAX_HEADER_SECTION_SIZE)
+		{
+			fail(431);
+		}
+		return;
+	}
+	if(pos + 4 > MAX_HEADER_SECTION_SIZE)
+	{
+		fail(431);
 		return;
 	}
 
@@ -69,6 +106,11 @@ void HttpParser::parseHeadIfReady()
 		begin = lineEnd + 2;
 	}
 
+	if(requestLine.empty())
+	{
+		fail(400);
+		return;
+	}
 	parseStartLine(requestLine);
 	if(_state == FAILED)
 	{
@@ -91,6 +133,17 @@ void HttpParser::parseHeadIfReady()
 			begin = lineEnd + 2;
 		}
 
+		if(line.size() > MAX_HEADER_FIELD_LINE_SIZE)
+		{
+			fail(431);
+			return;
+		}
+		_headerCount++;
+		if(_headerCount > MAX_HEADER_COUNT)
+		{
+			fail(431);
+			return;
+		}
 		parseHeaderLine(line);
 		if(_state == FAILED)
 		{
@@ -115,25 +168,52 @@ void HttpParser::parseHeadIfReady()
 
 void HttpParser::parseStartLine(const std::string& line)
 {
-	std::istringstream iss(line);
 	std::string method;
 	std::string uri;
 	std::string version;
-	std::string extra;
+	std::size_t firstSpace = line.find(' ');
+	std::size_t secondSpace;
 
-	if(!(iss >> method >> uri >> version) || (iss >> extra))
+	if(line.find('\t') != std::string::npos
+			|| firstSpace == std::string::npos
+			|| firstSpace == 0)
 	{
 		fail(400);
 		return;
 	}
 
-	if(uri.empty())
+	secondSpace = line.find(' ', firstSpace + 1);
+	if(secondSpace == std::string::npos
+			|| secondSpace == firstSpace + 1
+			|| line.find(' ', secondSpace + 1) != std::string::npos
+			|| secondSpace + 1 >= line.size())
 	{
 		fail(400);
 		return;
 	}
 
-	_request.setRequestLine(method, uri, version);
+	method = line.substr(0, firstSpace);
+	uri = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+	version = line.substr(secondSpace + 1);
+
+	if(!HttpSyntax::isToken(method))
+	{
+		fail(400);
+		return;
+	}
+
+	if(uri.size() > MAX_REQUEST_TARGET_SIZE)
+	{
+		fail(414);
+		return;
+	}
+
+	if(!_request.setRequestLine(method, uri, version))
+	{
+		fail(400);
+		return;
+	}
+
 	if(!isSupportedHttpMethod(_request.method()))
 	{
 		fail(501);
@@ -142,24 +222,31 @@ void HttpParser::parseStartLine(const std::string& line)
 
 void HttpParser::parseHeaderLine(const std::string& line)
 {
-	std::size_t colon = line.find(':');
+	std::string name;
+	std::string value;
 
-	if(colon == std::string::npos || colon == 0)
+	if(!HttpSyntax::splitFieldLine(line, name, value))
 	{
 		fail(400);
 		return;
 	}
 
-	std::string name = line.substr(0, colon);
-	std::string value = line.substr(colon + 1);
-	std::string lowerName = HttpHelper::toLowerString(HttpHelper::trim(name));
+	std::string lowerName = HttpHelper::toLowerString(name);
+	std::string trimmedValue = HttpHelper::trim(value);
 
-	if((lowerName == "host"
-			|| lowerName == "content-length"
-			|| lowerName == "transfer-encoding")
+	if((lowerName == "host" || lowerName == "transfer-encoding")
 			&& _request.hasHeader(lowerName))
 	{
 		fail(400);
+		return;
+	}
+
+	if(lowerName == "content-length" && _request.hasHeader(lowerName))
+	{
+		if(_request.header(lowerName) != trimmedValue)
+		{
+			fail(400);
+		}
 		return;
 	}
 
@@ -202,6 +289,16 @@ void HttpParser::parseChunkedBodyIfReady()
 		std::size_t lineEnd = _buffer.find("\r\n");
 		if(lineEnd == std::string::npos)
 		{
+			if(_buffer.size() > MAX_CHUNK_SIZE_LINE_SIZE)
+			{
+				fail(400);
+			}
+			return;
+		}
+
+		if(lineEnd > MAX_CHUNK_SIZE_LINE_SIZE)
+		{
+			fail(400);
 			return;
 		}
 
@@ -221,7 +318,7 @@ void HttpParser::parseChunkedBodyIfReady()
 		std::size_t chunkSize = 0;
 		for(std::size_t i = 0; i < sizeLine.size(); i++)
 		{
-			int digit = HttpHelper::hexValue(sizeLine[i]);
+			int digit = HttpSyntax::hexValue(sizeLine[i]);
 			if(digit < 0)
 			{
 				fail(400);
@@ -244,6 +341,7 @@ void HttpParser::parseChunkedBodyIfReady()
 			fail(413);
 			return;
 		}
+
 		if(chunkSize > available)
 		{
 			return;
@@ -255,6 +353,7 @@ void HttpParser::parseChunkedBodyIfReady()
 			{
 				return;
 			}
+
 			if(_buffer.compare(dataStart, 2, "\r\n") == 0)
 			{
 				_buffer.erase(0, dataStart + 2);
@@ -272,16 +371,25 @@ void HttpParser::parseChunkedBodyIfReady()
 			while(begin < trailerEnd)
 			{
 				std::size_t end = _buffer.find("\r\n", begin);
+				std::string trailerLine;
+				std::string trailerName;
+				std::string trailerValue;
+
 				if(end == std::string::npos || end > trailerEnd)
 				{
 					fail(400);
 					return;
 				}
 
-				std::string trailerLine = _buffer.substr(begin, end - begin);
-				std::size_t colon = trailerLine.find(':');
+				if(end - begin > MAX_HEADER_FIELD_LINE_SIZE)
+				{
+					fail(431);
+					return;
+				}
 
-				if(colon == std::string::npos || colon == 0)
+				trailerLine = _buffer.substr(begin, end - begin);
+				if(!HttpSyntax::splitFieldLine(trailerLine, trailerName,
+							trailerValue))
 				{
 					fail(400);
 					return;
@@ -315,7 +423,7 @@ void HttpParser::parseHostHeader()
 {
 	std::string host = _request.header("host");
 
-	if(host.empty() || HttpHelper::hasWhitespace(host))
+	if(host.empty() || HttpSyntax::hasWhitespace(host))
 	{
 		fail(400);
 		return;
@@ -375,6 +483,7 @@ void HttpParser::validateHttpVersion()
 	{
 		return;
 	}
+
 	if(version == "HTTP/1.0")
 	{
 		fail(505);
@@ -481,4 +590,9 @@ int HttpParser::errorStatus() const
 const HttpRequest& HttpParser::request() const
 {
 	return _request;
+}
+
+const std::string& HttpParser::bufferedBytes() const
+{
+	return _buffer;
 }
