@@ -13,7 +13,7 @@ public:
 	{
 		READING_HEAD,
 		READING_BODY,
-		DONE,
+		COMPLETE,
 		FAILED,
 	};
 
@@ -22,7 +22,7 @@ public:
 	void feed(const char* data, std::size_t len);
 	void setBodyLimit(std::size_t n);
 	State state() const;
-	int getErrorStatus() const;
+	int errorStatus() const;
 	const HttpRequest& request() const;
 	void reset();
 
@@ -43,6 +43,7 @@ private:
 	void parseHostHeader();
 	void validateHttpVersion();
 	void decideBodyMode();
+	void parseChunkedBodyIfReady();
 	void fail(int status);
 };
 

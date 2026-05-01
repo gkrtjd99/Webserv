@@ -25,7 +25,7 @@ void HttpParser::reset()
 
 void HttpParser::feed(const char* data, std::size_t len)
 {
-	if(_state == DONE || _state == FAILED)
+	if(_state == COMPLETE || _state == FAILED)
 	{
 		return;
 	}
@@ -154,7 +154,10 @@ void HttpParser::parseHeaderLine(const std::string& line)
 	std::string value = line.substr(colon + 1);
 	std::string lowerName = HttpHelper::toLowerString(HttpHelper::trim(name));
 
-	if(lowerName == "host" && _request.hasHeader("host"))
+	if((lowerName == "host"
+			|| lowerName == "content-length"
+			|| lowerName == "transfer-encoding")
+			&& _request.hasHeader(lowerName))
 	{
 		fail(400);
 		return;
@@ -172,6 +175,7 @@ void HttpParser::parseBodyIfReady()
 
 	if(_chunked)
 	{
+		parseChunkedBodyIfReady();
 		return;
 	}
 
@@ -188,14 +192,130 @@ void HttpParser::parseBodyIfReady()
 
 	_request.setBody(_buffer.substr(0, _contentLength));
 	_buffer.erase(0, _contentLength);
-	_state = DONE;
+	_state = COMPLETE;
+}
+
+void HttpParser::parseChunkedBodyIfReady()
+{
+	while(_state == READING_BODY)
+	{
+		std::size_t lineEnd = _buffer.find("\r\n");
+		if(lineEnd == std::string::npos)
+		{
+			return;
+		}
+
+		std::string sizeLine = _buffer.substr(0, lineEnd);
+		std::size_t extension = sizeLine.find(';');
+		if(extension != std::string::npos)
+		{
+			sizeLine = sizeLine.substr(0, extension);
+		}
+		sizeLine = HttpHelper::trim(sizeLine);
+		if(sizeLine.empty())
+		{
+			fail(400);
+			return;
+		}
+
+		std::size_t chunkSize = 0;
+		for(std::size_t i = 0; i < sizeLine.size(); i++)
+		{
+			int digit = HttpHelper::hexValue(sizeLine[i]);
+			if(digit < 0)
+			{
+				fail(400);
+				return;
+			}
+			if(chunkSize > (std::numeric_limits<std::size_t>::max()
+						- static_cast<std::size_t>(digit)) / 16)
+			{
+				fail(413);
+				return;
+			}
+			chunkSize = chunkSize * 16 + static_cast<std::size_t>(digit);
+		}
+
+		std::size_t dataStart = lineEnd + 2;
+		std::size_t available = _buffer.size() - dataStart;
+		if(_request.body().size() > _bodyLimit
+				|| chunkSize > _bodyLimit - _request.body().size())
+		{
+			fail(413);
+			return;
+		}
+		if(chunkSize > available)
+		{
+			return;
+		}
+
+		if(chunkSize == 0)
+		{
+			if(available < 2)
+			{
+				return;
+			}
+			if(_buffer.compare(dataStart, 2, "\r\n") == 0)
+			{
+				_buffer.erase(0, dataStart + 2);
+				_state = COMPLETE;
+				return;
+			}
+
+			std::size_t trailerEnd = _buffer.find("\r\n\r\n", dataStart);
+			if(trailerEnd == std::string::npos)
+			{
+				return;
+			}
+
+			std::size_t begin = dataStart;
+			while(begin < trailerEnd)
+			{
+				std::size_t end = _buffer.find("\r\n", begin);
+				if(end == std::string::npos || end > trailerEnd)
+				{
+					fail(400);
+					return;
+				}
+
+				std::string trailerLine = _buffer.substr(begin, end - begin);
+				std::size_t colon = trailerLine.find(':');
+
+				if(colon == std::string::npos || colon == 0)
+				{
+					fail(400);
+					return;
+				}
+
+				begin = end + 2;
+			}
+
+			_buffer.erase(0, trailerEnd + 4);
+			_state = COMPLETE;
+			return;
+		}
+
+		if(available - chunkSize < 2)
+		{
+			return;
+		}
+		if(_buffer[dataStart + chunkSize] != '\r'
+				|| _buffer[dataStart + chunkSize + 1] != '\n')
+		{
+			fail(400);
+			return;
+		}
+
+		_request.appendBody(_buffer.substr(dataStart, chunkSize));
+		_buffer.erase(0, dataStart + chunkSize + 2);
+	}
 }
 
 void HttpParser::parseHostHeader()
 {
 	std::string host = _request.header("host");
 
-	if(host.empty())
+	if(host.empty() || HttpHelper::hasWhitespace(host))
 	{
 		fail(400);
 		return;
@@ -233,12 +353,14 @@ void HttpParser::parseHostHeader()
 			return;
 		}
 
-		port = port * 10 + (portString[i] - '0');
-		if(port > 65535)
+		int digit = portString[i] - '0';
+		if(port > (0xffff - digit) / 10)
 		{
 			fail(400);
 			return;
 		}
+
+		port = port * 10 + digit;
 	}
 
 	_request.setHost(name);
@@ -303,7 +425,7 @@ void HttpParser::decideBodyMode()
 		if(_contentLength == 0)
 		{
 			_request.setBody("");
-			_state = DONE;
+			_state = COMPLETE;
 			return;
 		}
 
@@ -313,12 +435,21 @@ void HttpParser::decideBodyMode()
 
 	if(_request.hasHeader("transfer-encoding"))
 	{
+		std::string value = HttpHelper::toLowerString(
+				HttpHelper::trim(_request.header("transfer-encoding")));
+
+		if(value != "chunked")
+		{
+			fail(400);
+			return;
+		}
+
 		_chunked = true;
 		_state = READING_BODY;
 		return;
 	}
 
-	_state = DONE;
+	_state = COMPLETE;
 }
 
 void HttpParser::fail(int status)
@@ -342,7 +473,7 @@ HttpParser::State HttpParser::state() const
 	return _state;
 }
 
-int HttpParser::getErrorStatus() const
+int HttpParser::errorStatus() const
 {
 	return _errorStatus;
 }

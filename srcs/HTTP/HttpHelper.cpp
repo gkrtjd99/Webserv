@@ -35,4 +35,33 @@ namespace HttpHelper
 		return s.substr(begin, end - begin);
 	}
 
+	int hexValue(char c)
+	{
+		if(c >= '0' && c <= '9')
+		{
+			return c - '0';
+		}
+		if(c >= 'a' && c <= 'f')
+		{
+			return c - 'a' + 10;
+		}
+		if(c >= 'A' && c <= 'F')
+		{
+			return c - 'A' + 10;
+		}
+		return -1;
+	}
+
+	bool hasWhitespace(const std::string &s)
+	{
+		for(std::size_t i = 0; i < s.size(); i++)
+		{
+			if(std::isspace(static_cast<unsigned char>(s[i])))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
 }

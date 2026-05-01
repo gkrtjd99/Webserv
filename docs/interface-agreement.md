@@ -98,6 +98,7 @@ public:
     enum State { READING_HEAD, READING_BODY, COMPLETE, FAILED };
 
     void feed(const char* data, std::size_t len);
+    void setBodyLimit(std::size_t n);
     State state() const;
     int errorStatus() const;
     const HttpRequest& request() const;
@@ -106,7 +107,8 @@ public:
 ```
 
 - `feed` 는 부분 입력을 누적하고, `COMPLETE` 또는 `FAILED` 가 될 때까지 반복 호출됩니다.
-- `errorStatus` 는 400, 413, 501 같은 HTTP status 를 그대로 반환합니다.
+- `setBodyLimit` 은 routing 이후 확정된 body size limit을 Parser에 주입합니다.
+- `errorStatus` 는 400, 413, 501, 505 같은 HTTP status 를 그대로 반환합니다.
 
 ### HttpResponse
 
@@ -275,7 +277,7 @@ server {
 
 각 팀이 다른 팀의 완성을 기다리지 않도록, 합의 직후 아래 stub PR 을 먼저 main 에 넣습니다.
 
-- A: `HttpRequest` 와 `HttpParser` 의 빈 구현을 push 합니다. `feed` 는 항상 `COMPLETE` 를 만들고 고정 GET 을 반환하도록 두어도 됩니다.
+- A: `HttpRequest` 와 `HttpParser` 의 빈 구현을 push 합니다. `feed` 는 항상 `COMPLETE` 을 만들고 고정 GET 을 반환하도록 두어도 됩니다.
 - B: `Config::parse` 가 하드코딩된 1-server 설정을 반환하는 stub 을 push 합니다.
 - C: `EventLoop::run` 이 단일 accept 후 고정 응답을 보내는 minimal 구현을 push 합니다.
 
