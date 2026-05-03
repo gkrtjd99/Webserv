@@ -70,7 +70,7 @@ private:
 	void parseReturn(LocationConfig& loc);
 	void parseUploadStore(LocationConfig& loc);
 	void parseCgi(LocationConfig& loc);
-	void parseClientMaxBodySize(std::size_t& target);
+	void parseClientMaxBodySize(std::size_t& target, bool* targetSet);
 
 	Token consume();
 	Token consumeArg(const char* what);

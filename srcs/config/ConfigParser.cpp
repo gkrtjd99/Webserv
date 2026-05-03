@@ -166,7 +166,8 @@ void ConfigParser::parseServerBody(ServerConfig& server,
 		} else if (name == "client_max_body_size") {
 			ensureUnique(seen, tok);
 			consume();
-			parseClientMaxBodySize(server.clientMaxBodySize);
+			parseClientMaxBodySize(server.clientMaxBodySize,
+									&server.clientMaxBodySizeSet);
 		} else if (name == "location") {
 			consume();
 			parseLocationBlock(server);
@@ -246,7 +247,7 @@ void ConfigParser::parseLocationBody(LocationConfig& loc,
 		} else if (name == "client_max_body_size") {
 			ensureUnique(seen, tok);
 			consume();
-			parseClientMaxBodySize(loc.clientMaxBodySize);
+			parseClientMaxBodySize(loc.clientMaxBodySize, 0);
 		} else if (name == "include") {
 			parseLocationInclude(loc, seen);
 		} else {
@@ -313,10 +314,13 @@ void ConfigParser::parseErrorPage(ServerConfig& server)
 	}
 }
 
-void ConfigParser::parseClientMaxBodySize(std::size_t& target)
+void ConfigParser::parseClientMaxBodySize(std::size_t& target, bool* targetSet)
 {
 	Token tok = consumeArg("client_max_body_size value");
 	target = parseSizeValue(tok);
+	if (targetSet != 0) {
+		*targetSet = true;
+	}
 	expect(ConfigLexer::TOKEN_SEMI, "';' after client_max_body_size");
 }
 

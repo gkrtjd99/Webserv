@@ -55,7 +55,9 @@ void ConfigValidator::applyServerDefaults(ServerConfig& s)
 	if (s.host.empty()) {
 		s.host = "0.0.0.0";
 	}
-	if (s.clientMaxBodySize == 0) {
+	// V-S-5: explicit 0 ("0 바이트만 허용") 과 미설정을 구분.
+	// 미설정인 경우에만 디폴트 1m 으로 채운다.
+	if (!s.clientMaxBodySizeSet) {
 		s.clientMaxBodySize = 1024u * 1024u;
 	}
 }

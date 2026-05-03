@@ -14,6 +14,7 @@ struct ServerConfig {
 	std::vector<std::string>    serverNames;
 	std::map<int, std::string>  errorPages;
 	std::size_t                 clientMaxBodySize;
+	bool                        clientMaxBodySizeSet;    // V-S-5: explicit 0 과 미설정 구분
 	std::vector<LocationConfig> locations;
 
 	ServerConfig();

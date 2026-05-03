@@ -101,6 +101,7 @@ void test_t_val_4_body_size_over_limit()
 	Config cfg;
 	ServerConfig s = okServer(tmp.path());
 	s.clientMaxBodySize = 600u * 1024u * 1024u;    // 600m
+	s.clientMaxBodySizeSet = true;
 	cfg.servers.push_back(s);
 
 	ConfigError err(ConfigError::VALIDATION, "", 0, 0, "");
@@ -216,6 +217,7 @@ void test_t_val_12_location_body_size_falls_back_to_server()
 	Config cfg;
 	ServerConfig s = okServer(tmp.path());
 	s.clientMaxBodySize = 2u * 1024u * 1024u;    // 2m
+	s.clientMaxBodySizeSet = true;
 	s.locations[0].clientMaxBodySize = 0;
 	cfg.servers.push_back(s);
 
@@ -280,18 +282,33 @@ void test_server_defaults_host()
 	EXPECT_EQ(cfg.servers[0].host, std::string("0.0.0.0"));
 }
 
-void test_server_defaults_body_size()
+void test_server_defaults_body_size_when_unset()
 {
 	TempDir tmp;
 	Config cfg;
 	ServerConfig s = okServer(tmp.path());
-	s.clientMaxBodySize = 0;
+	// clientMaxBodySizeSet 은 false (미설정) → 1m 으로 채워져야 함.
 	cfg.servers.push_back(s);
 
 	ConfigValidator v(cfg);
 	v.run();
 	EXPECT_EQ(cfg.servers[0].clientMaxBodySize,
 			static_cast<std::size_t>(1024u * 1024u));
+}
+
+void test_server_explicit_zero_preserved()
+{
+	TempDir tmp;
+	Config cfg;
+	ServerConfig s = okServer(tmp.path());
+	s.clientMaxBodySize = 0;
+	s.clientMaxBodySizeSet = true;    // 사용자가 명시적으로 0 작성
+	cfg.servers.push_back(s);
+
+	ConfigValidator v(cfg);
+	v.run();
+	EXPECT_EQ(cfg.servers[0].clientMaxBodySize,
+			static_cast<std::size_t>(0));
 }
 
 }
@@ -314,6 +331,7 @@ int main()
 	test_t_val_14_redirect_code_invalid();
 	test_t_val_15_redirect_target_no_slash();
 	test_server_defaults_host();
-	test_server_defaults_body_size();
+	test_server_defaults_body_size_when_unset();
+	test_server_explicit_zero_preserved();
 	return webserv_tests::summarize("test_validator");
 }

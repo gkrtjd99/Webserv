@@ -22,6 +22,7 @@ ServerConfig::ServerConfig()
 	, serverNames()
 	, errorPages()
 	, clientMaxBodySize(0)
+	, clientMaxBodySizeSet(false)
 	, locations()
 {
 }
