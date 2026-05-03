@@ -269,6 +269,11 @@ void ConfigParser::parseListen(ServerConfig& server)
 	if (colon == std::string::npos) {
 		server.port = parseIntValue(tok);
 	} else {
+		if (colon == 0) {
+			syntaxError(tok,
+						std::string("listen value '") + v
+						+ "' has empty host before ':'");
+		}
 		server.host = v.substr(0, colon);
 		Token portTok = tok;
 		portTok.value = v.substr(colon + 1);

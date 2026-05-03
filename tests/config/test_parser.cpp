@@ -195,6 +195,17 @@ void test_unsupported_method()
 	EXPECT_CONTAINS(err.what(), "PUT");
 }
 
+void test_listen_empty_host_rejected()
+{
+	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
+	const bool threw = throwsSyntax(
+		"server { listen :8080; location / { root ./w; } }",
+		err);
+
+	EXPECT_TRUE(threw);
+	EXPECT_CONTAINS(err.what(), "empty host");
+}
+
 void test_int_overflow_detected()
 {
 	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
@@ -267,6 +278,7 @@ int main()
 	test_size_suffix();
 	test_autoindex_invalid_value();
 	test_unsupported_method();
+	test_listen_empty_host_rejected();
 	test_int_overflow_detected();
 	test_size_overflow_detected();
 	test_error_page_last_arg_must_be_path();
