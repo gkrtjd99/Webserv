@@ -195,6 +195,28 @@ void test_unsupported_method()
 	EXPECT_CONTAINS(err.what(), "PUT");
 }
 
+void test_error_page_last_arg_must_be_path()
+{
+	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
+	const bool threw = throwsSyntax(
+		"server { listen 80; error_page 404 500; "
+		"location / { root ./w; } }",
+		err);
+
+	EXPECT_TRUE(threw);
+	EXPECT_CONTAINS(err.what(), "path expected");
+}
+
+void test_error_page_quoted_numeric_path_ok()
+{
+	Config cfg = parse(
+		"server { listen 80; error_page 404 \"/500\";"
+		"  location / { root ./w; } }");
+
+	EXPECT_EQ(cfg.servers[0].errorPages.size(),
+			static_cast<std::size_t>(1));
+}
+
 void test_cgi_extension_must_start_with_dot()
 {
 	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
@@ -222,6 +244,8 @@ int main()
 	test_size_suffix();
 	test_autoindex_invalid_value();
 	test_unsupported_method();
+	test_error_page_last_arg_must_be_path();
+	test_error_page_quoted_numeric_path_ok();
 	test_cgi_extension_must_start_with_dot();
 	return webserv_tests::summarize("test_parser");
 }

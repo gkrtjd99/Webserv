@@ -256,6 +256,11 @@ void ConfigParser::parseErrorPage(ServerConfig& server)
 	consume();    // SEMI
 
 	const Token pathTok = args.back();
+	if (pathTok.type == ConfigLexer::TOKEN_NUMBER) {
+		syntaxError(pathTok,
+					std::string("error_page path expected, got number '")
+					+ pathTok.value + "'");
+	}
 	for (std::size_t i = 0; i + 1 < args.size(); ++i) {
 		if (args[i].type != ConfigLexer::TOKEN_NUMBER) {
 			syntaxError(args[i],
