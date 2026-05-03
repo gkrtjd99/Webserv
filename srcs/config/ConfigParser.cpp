@@ -455,14 +455,21 @@ int ConfigParser::parseIntValue(const Token& tok)
 	if (tok.value.empty()) {
 		syntaxError(tok, "expected integer, got empty value");
 	}
+	const long kIntMax = static_cast<long>(INT_MAX);
+	long n = 0;
 	for (std::size_t i = 0; i < tok.value.size(); ++i) {
 		const char c = tok.value[i];
 		if (c < '0' || c > '9') {
 			syntaxError(tok, std::string("expected integer, got '")
 							 + tok.value + "'");
 		}
+		n = n * 10 + (c - '0');
+		if (n > kIntMax) {
+			syntaxError(tok, std::string("integer value '") + tok.value
+							 + "' too large");
+		}
 	}
-	return std::atoi(tok.value.c_str());
+	return static_cast<int>(n);
 }
 
 std::size_t ConfigParser::parseSizeValue(const Token& tok)
@@ -483,6 +490,8 @@ std::size_t ConfigParser::parseSizeValue(const Token& tok)
 	if (end == 0) {
 		syntaxError(tok, std::string("invalid size value '") + tok.value + "'");
 	}
+
+	const std::size_t kSizeMax = static_cast<std::size_t>(-1);
 	std::size_t bytes = 0;
 	for (std::size_t i = 0; i < end; ++i) {
 		const char c = tok.value[i];
@@ -490,7 +499,16 @@ std::size_t ConfigParser::parseSizeValue(const Token& tok)
 			syntaxError(tok, std::string("invalid size value '") + tok.value
 							 + "'");
 		}
-		bytes = bytes * 10 + static_cast<std::size_t>(c - '0');
+		const std::size_t digit = static_cast<std::size_t>(c - '0');
+		if (bytes > (kSizeMax - digit) / 10) {
+			syntaxError(tok, std::string("size value '") + tok.value
+							 + "' too large");
+		}
+		bytes = bytes * 10 + digit;
+	}
+	if (multiplier != 1 && bytes > kSizeMax / multiplier) {
+		syntaxError(tok, std::string("size value '") + tok.value
+						 + "' too large");
 	}
 	return bytes * multiplier;
 }

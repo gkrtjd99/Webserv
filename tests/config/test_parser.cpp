@@ -195,6 +195,29 @@ void test_unsupported_method()
 	EXPECT_CONTAINS(err.what(), "PUT");
 }
 
+void test_int_overflow_detected()
+{
+	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
+	const bool threw = throwsSyntax(
+		"server { listen 99999999999; location / { root ./w; } }",
+		err);
+
+	EXPECT_TRUE(threw);
+	EXPECT_CONTAINS(err.what(), "too large");
+}
+
+void test_size_overflow_detected()
+{
+	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
+	const bool threw = throwsSyntax(
+		"server { listen 80; client_max_body_size 99999999999999m;"
+		"  location / { root ./w; } }",
+		err);
+
+	EXPECT_TRUE(threw);
+	EXPECT_CONTAINS(err.what(), "too large");
+}
+
 void test_error_page_last_arg_must_be_path()
 {
 	ConfigError err(ConfigError::SYNTAX, "", 0, 0, "");
@@ -244,6 +267,8 @@ int main()
 	test_size_suffix();
 	test_autoindex_invalid_value();
 	test_unsupported_method();
+	test_int_overflow_detected();
+	test_size_overflow_detected();
 	test_error_page_last_arg_must_be_path();
 	test_error_page_quoted_numeric_path_ok();
 	test_cgi_extension_must_start_with_dot();
