@@ -9,6 +9,50 @@
 #include <fstream>
 #include <sstream>
 #include <utility>
+#include <vector>
+
+namespace {
+
+// lex_ 포인터를 새 lexer 로 잠시 교체했다가 스코프 종료 시 원상 복구.
+// throw 가 발생해도 dangling pointer 가 남지 않도록 RAII 로 관리한다.
+class LexerScope {
+public:
+	LexerScope(ConfigLexer*& slot, ConfigLexer* newLex)
+		: slot_(slot), prev_(slot)
+	{
+		slot_ = newLex;
+	}
+	~LexerScope()
+	{
+		slot_ = prev_;
+	}
+private:
+	ConfigLexer*& slot_;
+	ConfigLexer*  prev_;
+	LexerScope(const LexerScope&);
+	LexerScope& operator=(const LexerScope&);
+};
+
+// includeStack_ 에 push 하고 스코프 종료 시 pop. throw 시 stack 누수 방지.
+class IncludeStackScope {
+public:
+	IncludeStackScope(std::vector<std::string>& stack,
+					const std::string& path)
+		: stack_(stack)
+	{
+		stack_.push_back(path);
+	}
+	~IncludeStackScope()
+	{
+		stack_.pop_back();
+	}
+private:
+	std::vector<std::string>& stack_;
+	IncludeStackScope(const IncludeStackScope&);
+	IncludeStackScope& operator=(const IncludeStackScope&);
+};
+
+}    // anonymous namespace
 
 ConfigParser::ConfigParser(const std::string& rootPath)
 	: result_()
@@ -32,9 +76,8 @@ Config ConfigParser::parse()
 	std::string canonical = (realpath(rootPath_.c_str(), buf) != 0)
 							? std::string(buf) : rootPath_;
 
-	includeStack_.push_back(canonical);
+	IncludeStackScope frame(includeStack_, canonical);
 	parseSource(oss.str(), canonical);
-	includeStack_.pop_back();
 	return result_;
 }
 
@@ -42,10 +85,8 @@ void ConfigParser::parseSource(const std::string& source,
 								const std::string& file)
 {
 	ConfigLexer lex(source, file);
-	ConfigLexer* prev = lex_;
-	lex_ = &lex;
+	LexerScope scope(lex_, &lex);
 	parseTopBody(false);
-	lex_ = prev;
 }
 
 const Config& ConfigParser::result() const
@@ -477,13 +518,10 @@ void ConfigParser::parseTopInclude()
 	ensureNoCycle(canonical, pathTok);
 	const std::string source = readFileToString(canonical, pathTok);
 
-	includeStack_.push_back(canonical);
+	IncludeStackScope frame(includeStack_, canonical);
 	ConfigLexer sublex(source, canonical);
-	ConfigLexer* prev = lex_;
-	lex_ = &sublex;
+	LexerScope scope(lex_, &sublex);
 	parseTopBody(true);
-	lex_ = prev;
-	includeStack_.pop_back();
 }
 
 void ConfigParser::parseServerInclude(ServerConfig& server,
@@ -497,13 +535,10 @@ void ConfigParser::parseServerInclude(ServerConfig& server,
 	ensureNoCycle(canonical, pathTok);
 	const std::string source = readFileToString(canonical, pathTok);
 
-	includeStack_.push_back(canonical);
+	IncludeStackScope frame(includeStack_, canonical);
 	ConfigLexer sublex(source, canonical);
-	ConfigLexer* prev = lex_;
-	lex_ = &sublex;
+	LexerScope scope(lex_, &sublex);
 	parseServerBody(server, seen, true);
-	lex_ = prev;
-	includeStack_.pop_back();
 }
 
 void ConfigParser::parseLocationInclude(LocationConfig& loc,
@@ -517,13 +552,10 @@ void ConfigParser::parseLocationInclude(LocationConfig& loc,
 	ensureNoCycle(canonical, pathTok);
 	const std::string source = readFileToString(canonical, pathTok);
 
-	includeStack_.push_back(canonical);
+	IncludeStackScope frame(includeStack_, canonical);
 	ConfigLexer sublex(source, canonical);
-	ConfigLexer* prev = lex_;
-	lex_ = &sublex;
+	LexerScope scope(lex_, &sublex);
 	parseLocationBody(loc, seen, true);
-	lex_ = prev;
-	includeStack_.pop_back();
 }
 
 std::string ConfigParser::resolveIncludePath(const std::string& argPath) const

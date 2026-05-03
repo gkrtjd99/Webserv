@@ -127,6 +127,32 @@ void test_include_inside_location()
 	EXPECT_EQ(loc.methods.size(), static_cast<std::size_t>(2));
 }
 
+void test_include_state_restored_after_throw()
+{
+	TempDir tmp;
+	const std::string root = tmp.path() + "/loop.conf";
+	writeFile(root, "include loop.conf;");
+
+	ConfigParser p(root);
+	bool firstThrew = false;
+	try {
+		p.parse();
+	} catch (const ConfigError&) {
+		firstThrew = true;
+	}
+	EXPECT_TRUE(firstThrew);
+
+	// 상태가 RAII 로 정리되었으면 두 번째 호출도 동일 동작.
+	bool secondThrew = false;
+	try {
+		p.parse();
+	} catch (const ConfigError& e) {
+		secondThrew = true;
+		EXPECT_CONTAINS(e.what(), "cycle");
+	}
+	EXPECT_TRUE(secondThrew);
+}
+
 void test_include_missing_file()
 {
 	TempDir tmp;
@@ -148,6 +174,7 @@ int main()
 	test_t_parse_8_self_include_is_cycle();
 	test_t_parse_9_include_depth_exceeded();
 	test_include_inside_location();
+	test_include_state_restored_after_throw();
 	test_include_missing_file();
 	return webserv_tests::summarize("test_include");
 }
