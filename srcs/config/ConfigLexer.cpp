@@ -101,7 +101,8 @@ ConfigLexer::Token ConfigLexer::scanQuoted(int startLine, int startCol)
 		if (c == '\\') {
 			advance();
 			if (eof()) {
-				throw ConfigError(ConfigError::LEX, file_, line_, col_,
+				throw ConfigError(ConfigError::LEX, file_,
+								  startLine, startCol,
 								  "unterminated string starting here");
 			}
 			const char esc = current();

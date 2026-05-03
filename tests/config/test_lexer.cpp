@@ -154,6 +154,16 @@ void test_quoted_escapes()
 	EXPECT_EQ(toks[0].value, std::string("a\"b\\c"));
 }
 
+void test_unterminated_after_backslash_reports_start()
+{
+	ConfigError err(ConfigError::LEX, "", 0, 0, "");
+	const bool threw = throwsLex("  \"abc\\", err);
+
+	EXPECT_TRUE(threw);
+	EXPECT_EQ(err.line(), 1);
+	EXPECT_EQ(err.col(), 3);    // 따옴표 시작 위치 (`\` 위치 아님)
+}
+
 void test_invalid_escape_throws()
 {
 	ConfigError err(ConfigError::LEX, "", 0, 0, "");
@@ -176,6 +186,7 @@ int main()
 	test_position_tracking_across_newlines();
 	test_peek_does_not_consume();
 	test_quoted_escapes();
+	test_unterminated_after_backslash_reports_start();
 	test_invalid_escape_throws();
 	return webserv_tests::summarize("test_lexer");
 }
