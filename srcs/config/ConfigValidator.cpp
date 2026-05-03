@@ -2,14 +2,17 @@
 
 #include "ConfigError.hpp"
 #include "HttpMethod.hpp"
+#include "Log.hpp"
 
 #include <cstddef>
 #include <cstdlib>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -149,9 +152,37 @@ void ConfigValidator::validateServer(ServerConfig& s)
 		}
 	}
 
+	// V-S-8 (SHOULD): locations 가 비어있어도 자동 생성하지 않고 경고만.
+	if (s.locations.empty()) {
+		LOG_WARN("server " << s.host << ":" << s.port
+				<< " has no location blocks");
+	}
+
+	dedupeLocations(s);
+
 	for (std::size_t i = 0; i < s.locations.size(); ++i) {
 		validateLocation(s, s.locations[i]);
 	}
+}
+
+void ConfigValidator::dedupeLocations(ServerConfig& s)
+{
+	// V-L-3 (SHOULD): 동일 path 의 location 이 둘 이상이면 마지막만 유지.
+	// applyDefaults 에서 이미 path 를 normalize 했으므로 여기서 비교한다.
+	std::map<std::string, std::size_t> lastIdx;
+	for (std::size_t i = 0; i < s.locations.size(); ++i) {
+		lastIdx[s.locations[i].path] = i;
+	}
+	std::vector<LocationConfig> kept;
+	for (std::size_t i = 0; i < s.locations.size(); ++i) {
+		const std::string& path = s.locations[i].path;
+		if (lastIdx[path] == i) {
+			kept.push_back(s.locations[i]);
+		} else {
+			LOG_WARN("location '" << path << "' duplicated; keeping last");
+		}
+	}
+	s.locations.swap(kept);
 }
 
 void ConfigValidator::validateLocation(const ServerConfig& /*s*/,

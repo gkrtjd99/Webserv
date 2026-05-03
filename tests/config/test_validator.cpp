@@ -296,6 +296,46 @@ void test_server_defaults_body_size_when_unset()
 			static_cast<std::size_t>(1024u * 1024u));
 }
 
+void test_v_l_3_duplicate_locations_kept_last()
+{
+	TempDir tmp;
+	Config cfg;
+	ServerConfig s = okServer(tmp.path());
+
+	LocationConfig dup;
+	dup.path = "/";
+	dup.root = tmp.path();
+	dup.methods.insert(HTTP_GET);
+	dup.index = "alt.html";    // 마지막 유지 여부 확인용 표식
+	s.locations.push_back(dup);
+
+	cfg.servers.push_back(s);
+
+	ConfigValidator v(cfg);
+	v.run();
+
+	EXPECT_EQ(cfg.servers[0].locations.size(),
+			static_cast<std::size_t>(1));
+	EXPECT_EQ(cfg.servers[0].locations[0].index,
+			std::string("alt.html"));
+}
+
+void test_v_s_8_empty_locations_warning()
+{
+	TempDir tmp;
+	Config cfg;
+	ServerConfig s;
+	s.host = "127.0.0.1";
+	s.port = 8080;
+	cfg.servers.push_back(s);    // locations 비어있음
+
+	ConfigValidator v(cfg);
+	v.run();    // V-S-8 은 SHOULD → 경고만, 통과해야 함
+
+	EXPECT_EQ(cfg.servers[0].locations.size(),
+			static_cast<std::size_t>(0));
+}
+
 void test_server_explicit_zero_preserved()
 {
 	TempDir tmp;
@@ -333,5 +373,7 @@ int main()
 	test_server_defaults_host();
 	test_server_defaults_body_size_when_unset();
 	test_server_explicit_zero_preserved();
+	test_v_l_3_duplicate_locations_kept_last();
+	test_v_s_8_empty_locations_warning();
 	return webserv_tests::summarize("test_validator");
 }

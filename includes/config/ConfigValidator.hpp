@@ -23,6 +23,7 @@ private:
 	void validateServer(ServerConfig& s);
 	void validateLocation(const ServerConfig& s, LocationConfig& l);
 	void validateFilesystem(const LocationConfig& l);
+	void dedupeLocations(ServerConfig& s);
 
 	static bool isValidIPv4(const std::string& s);
 	static bool isValidHostname(const std::string& s);
