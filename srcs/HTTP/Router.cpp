@@ -1,13 +1,16 @@
 #include "Router.hpp"
 #include "Config/Config.hpp"
+#include "HttpHelper.hpp"
 
 namespace
 {
 	bool hasServerName(const ServerConfig& server, const std::string& host)
 	{
+		std::string normalizedHost = HttpHelper::toLowerString(host);
+
 		for(std::size_t i = 0; i < server.serverNames.size(); i++)
 		{
-			if(server.serverNames[i] == host)
+			if(HttpHelper::toLowerString(server.serverNames[i]) == normalizedHost)
 			{
 				return true;
 			}
@@ -88,4 +91,3 @@ const LocationConfig* matchLocation(const ServerConfig& server,
 
 	return best;
 }
-

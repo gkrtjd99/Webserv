@@ -173,6 +173,7 @@ const LocationConfig* matchLocation(const ServerConfig& server,
 
 - 가장 긴 prefix 매칭을 사용합니다.
 - 일치하는 항목이 없으면 `NULL` 을 반환합니다.
+- `Host` 와 `serverNames` 비교는 lowercase 기준의 case-insensitive 비교를 사용합니다.
 
 ### EventLoop
 

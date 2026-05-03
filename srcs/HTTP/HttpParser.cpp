@@ -434,7 +434,12 @@ void HttpParser::parseHostHeader()
 
 	if(colon == std::string::npos)
 	{
-		_request.setHost(host);
+		if(!HttpSyntax::isValidHostName(host))
+		{
+			fail(HTTP_STATUS_BAD_REQUEST);
+			return;
+		}
+		_request.setHost(HttpHelper::toLowerString(host));
 		return;
 	}
 
@@ -448,6 +453,11 @@ void HttpParser::parseHostHeader()
 	std::string portString = host.substr(colon + 1);
 
 	if(name.empty() || portString.empty())
+	{
+		fail(HTTP_STATUS_BAD_REQUEST);
+		return;
+	}
+	if(!HttpSyntax::isValidHostName(name))
 	{
 		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
@@ -472,7 +482,7 @@ void HttpParser::parseHostHeader()
 		port = port * 10 + digit;
 	}
 
-	_request.setHost(name);
+	_request.setHost(HttpHelper::toLowerString(name));
 	_request.setHostPort(port);
 }
 

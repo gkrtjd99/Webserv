@@ -73,6 +73,33 @@ namespace HttpSyntax
 			&& std::isdigit(static_cast<unsigned char>(value[7]));
 	}
 
+	bool isValidHostName(const std::string& value)
+	{
+		bool hasAlnum = false;
+
+		if(value.empty())
+		{
+			return false;
+		}
+		for(std::size_t i = 0; i < value.size(); i++)
+		{
+			unsigned char c = static_cast<unsigned char>(value[i]);
+
+			if((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+					|| (c >= '0' && c <= '9'))
+			{
+				hasAlnum = true;
+				continue;
+			}
+			if(value[i] == '.' || value[i] == '-' || value[i] == '_')
+			{
+				continue;
+			}
+			return false;
+		}
+		return hasAlnum;
+	}
+
 	bool hasInvalidFieldValueChar(const std::string& value)
 	{
 		for(std::size_t i = 0; i < value.size(); i++)
@@ -111,14 +138,14 @@ namespace HttpSyntax
 	{
 		unsigned char uc = static_cast<unsigned char>(c);
 
-		return uc <= 0x20 || uc == 0x7f;
+		return uc <= 0x20 || uc == 0x7f || c == '\\';
 	}
 
 	bool isInvalidDecodedPathChar(char c)
 	{
 		unsigned char uc = static_cast<unsigned char>(c);
 
-		return uc < 0x20 || uc == 0x7f;
+		return uc < 0x20 || uc == 0x7f || c == '\\';
 	}
 
 	bool percentTripletsAreValid(const std::string& value)
@@ -170,6 +197,10 @@ namespace HttpSyntax
 
 				c = static_cast<char>(hi * 16 + lo);
 				i += 2;
+				if(c == '/' || c == '\\')
+				{
+					return false;
+				}
 			}
 
 			if(isInvalidDecodedPathChar(c))

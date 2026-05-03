@@ -12,6 +12,7 @@ namespace HttpSyntax
 	bool isTchar(char c);
 	bool isToken(const std::string& value);
 	bool isHttpVersion(const std::string& value);
+	bool isValidHostName(const std::string& value);
 	bool hasInvalidFieldValueChar(const std::string& value);
 	bool splitFieldLine(const std::string& line,
 			std::string& name,
