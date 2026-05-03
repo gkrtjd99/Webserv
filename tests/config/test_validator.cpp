@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -100,8 +101,7 @@ void test_t_val_4_body_size_over_limit()
 	TempDir tmp;
 	Config cfg;
 	ServerConfig s = okServer(tmp.path());
-	s.clientMaxBodySize = 600u * 1024u * 1024u;    // 600m
-	s.clientMaxBodySizeSet = true;
+	s.setClientMaxBodySize(600u * 1024u * 1024u);    // 600m
 	cfg.servers.push_back(s);
 
 	ConfigError err(ConfigError::VALIDATION, "", 0, 0, "");
@@ -216,8 +216,7 @@ void test_t_val_12_location_body_size_falls_back_to_server()
 	TempDir tmp;
 	Config cfg;
 	ServerConfig s = okServer(tmp.path());
-	s.clientMaxBodySize = 2u * 1024u * 1024u;    // 2m
-	s.clientMaxBodySizeSet = true;
+	s.setClientMaxBodySize(2u * 1024u * 1024u);    // 2m
 	s.locations[0].clientMaxBodySize = 0;
 	cfg.servers.push_back(s);
 
@@ -320,6 +319,34 @@ void test_v_l_3_duplicate_locations_kept_last()
 			std::string("alt.html"));
 }
 
+void test_dedupe_three_or_more_locations()
+{
+	TempDir tmp;
+	Config cfg;
+	ServerConfig s = okServer(tmp.path());
+
+	// okServer 가 location["/"] 1개를 만들어 둠. 동일 path 2개 더 추가.
+	for (int i = 0; i < 2; ++i) {
+		LocationConfig dup;
+		dup.path = "/";
+		dup.root = tmp.path();
+		dup.methods.insert(HTTP_GET);
+		std::ostringstream tag;
+		tag << "v" << (i + 1) << ".html";
+		dup.index = tag.str();
+		s.locations.push_back(dup);
+	}
+	cfg.servers.push_back(s);
+
+	ConfigValidator v(cfg);
+	v.run();
+
+	EXPECT_EQ(cfg.servers[0].locations.size(),
+			static_cast<std::size_t>(1));
+	EXPECT_EQ(cfg.servers[0].locations[0].index,
+			std::string("v2.html"));    // 마지막 push 만 유지
+}
+
 void test_v_s_8_empty_locations_warning()
 {
 	TempDir tmp;
@@ -341,8 +368,7 @@ void test_server_explicit_zero_preserved()
 	TempDir tmp;
 	Config cfg;
 	ServerConfig s = okServer(tmp.path());
-	s.clientMaxBodySize = 0;
-	s.clientMaxBodySizeSet = true;    // 사용자가 명시적으로 0 작성
+	s.setClientMaxBodySize(0);    // 사용자가 명시적으로 0 작성
 	cfg.servers.push_back(s);
 
 	ConfigValidator v(cfg);
@@ -374,6 +400,7 @@ int main()
 	test_server_defaults_body_size_when_unset();
 	test_server_explicit_zero_preserved();
 	test_v_l_3_duplicate_locations_kept_last();
+	test_dedupe_three_or_more_locations();
 	test_v_s_8_empty_locations_warning();
 	return webserv_tests::summarize("test_validator");
 }

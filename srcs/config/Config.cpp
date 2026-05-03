@@ -27,6 +27,12 @@ ServerConfig::ServerConfig()
 {
 }
 
+void ServerConfig::setClientMaxBodySize(std::size_t value)
+{
+	clientMaxBodySize = value;
+	clientMaxBodySizeSet = true;
+}
+
 Config Config::parse(const std::string& path)
 {
 	ConfigParser parser(path);

@@ -18,6 +18,11 @@ struct ServerConfig {
 	std::vector<LocationConfig> locations;
 
 	ServerConfig();
+
+	// 두 필드를 항상 함께 갱신하기 위한 헬퍼.
+	// 직접 ServerConfig 를 만들어 검증기를 돌릴 때(예: 단위 테스트)
+	// clientMaxBodySize 만 할당하면 미설정으로 취급되어 디폴트로 덮인다.
+	void setClientMaxBodySize(std::size_t value);
 };
 
 #endif
