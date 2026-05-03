@@ -30,9 +30,34 @@ private:
 	std::vector<std::string> includeStack_;
 	ConfigLexer*             lex_;
 
-	void parseTop();
+	static const std::size_t kMaxIncludeDepth = 8;
+
+	void parseTopBody(bool fromInclude);
+	void parseServerBody(ServerConfig& server,
+							std::set<std::string>& seen,
+							bool fromInclude);
+	void parseLocationBody(LocationConfig& loc,
+							std::set<std::string>& seen,
+							bool fromInclude);
+
 	void parseServerBlock();
 	void parseLocationBlock(ServerConfig& server);
+
+	void parseTopInclude();
+	void parseServerInclude(ServerConfig& server,
+							std::set<std::string>& seen);
+	void parseLocationInclude(LocationConfig& loc,
+								std::set<std::string>& seen);
+	Token readIncludeArgs();
+
+	std::string resolveIncludePath(const std::string& argPath) const;
+	std::string canonicalizePath(const std::string& path,
+									const Token& at) const;
+	std::string readFileToString(const std::string& path,
+									const Token& at) const;
+	void        ensureNoCycle(const std::string& canonical,
+								const Token& at);
+	void        ensureDepth(const Token& at);
 
 	void parseListen(ServerConfig& server);
 	void parseServerName(ServerConfig& server);

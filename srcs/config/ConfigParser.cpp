@@ -3,6 +3,7 @@
 #include "ConfigError.hpp"
 #include "HttpMethod.hpp"
 
+#include <climits>
 #include <cstddef>
 #include <cstdlib>
 #include <fstream>
@@ -26,7 +27,14 @@ Config ConfigParser::parse()
 	}
 	std::ostringstream oss;
 	oss << ifs.rdbuf();
-	parseSource(oss.str(), rootPath_);
+
+	char buf[PATH_MAX];
+	std::string canonical = (realpath(rootPath_.c_str(), buf) != 0)
+							? std::string(buf) : rootPath_;
+
+	includeStack_.push_back(canonical);
+	parseSource(oss.str(), canonical);
+	includeStack_.pop_back();
 	return result_;
 }
 
@@ -36,7 +44,7 @@ void ConfigParser::parseSource(const std::string& source,
 	ConfigLexer lex(source, file);
 	ConfigLexer* prev = lex_;
 	lex_ = &lex;
-	parseTop();
+	parseTopBody(false);
 	lex_ = prev;
 }
 
@@ -45,7 +53,7 @@ const Config& ConfigParser::result() const
 	return result_;
 }
 
-void ConfigParser::parseTop()
+void ConfigParser::parseTopBody(bool fromInclude)
 {
 	for (;;) {
 		Token tok = lex_->peek();
@@ -56,6 +64,11 @@ void ConfigParser::parseTop()
 			parseServerBlock();
 			continue;
 		}
+		if (tok.type == ConfigLexer::TOKEN_IDENT && tok.value == "include") {
+			parseTopInclude();
+			continue;
+		}
+		(void)fromInclude;
 		syntaxError(tok, std::string("unexpected token '") + tok.value
 						 + "' at top level");
 	}
@@ -68,15 +81,28 @@ void ConfigParser::parseServerBlock()
 
 	ServerConfig server;
 	std::set<std::string> seen;
+	parseServerBody(server, seen, false);
+	result_.servers.push_back(server);
+}
 
+void ConfigParser::parseServerBody(ServerConfig& server,
+									std::set<std::string>& seen,
+									bool fromInclude)
+{
 	for (;;) {
 		Token tok = lex_->peek();
-		if (tok.type == ConfigLexer::TOKEN_RBRACE) {
-			consume();
-			break;
-		}
 		if (tok.type == ConfigLexer::TOKEN_EOF) {
+			if (fromInclude) {
+				return;
+			}
 			syntaxError(tok, "unexpected end of file inside server block");
+		}
+		if (tok.type == ConfigLexer::TOKEN_RBRACE) {
+			if (fromInclude) {
+				syntaxError(tok, "unexpected '}' in included file");
+			}
+			consume();
+			return;
 		}
 		if (tok.type != ConfigLexer::TOKEN_IDENT) {
 			syntaxError(tok, std::string("expected directive, got '")
@@ -103,12 +129,12 @@ void ConfigParser::parseServerBlock()
 		} else if (name == "location") {
 			consume();
 			parseLocationBlock(server);
+		} else if (name == "include") {
+			parseServerInclude(server, seen);
 		} else {
 			syntaxError(tok, std::string("unknown directive '") + name + "'");
 		}
 	}
-
-	result_.servers.push_back(server);
 }
 
 void ConfigParser::parseLocationBlock(ServerConfig& server)
@@ -119,15 +145,28 @@ void ConfigParser::parseLocationBlock(ServerConfig& server)
 	LocationConfig loc;
 	loc.path = pathTok.value;
 	std::set<std::string> seen;
+	parseLocationBody(loc, seen, false);
+	server.locations.push_back(loc);
+}
 
+void ConfigParser::parseLocationBody(LocationConfig& loc,
+									std::set<std::string>& seen,
+									bool fromInclude)
+{
 	for (;;) {
 		Token tok = lex_->peek();
-		if (tok.type == ConfigLexer::TOKEN_RBRACE) {
-			consume();
-			break;
-		}
 		if (tok.type == ConfigLexer::TOKEN_EOF) {
+			if (fromInclude) {
+				return;
+			}
 			syntaxError(tok, "unexpected end of file inside location block");
+		}
+		if (tok.type == ConfigLexer::TOKEN_RBRACE) {
+			if (fromInclude) {
+				syntaxError(tok, "unexpected '}' in included file");
+			}
+			consume();
+			return;
 		}
 		if (tok.type != ConfigLexer::TOKEN_IDENT) {
 			syntaxError(tok, std::string("expected directive, got '")
@@ -167,12 +206,12 @@ void ConfigParser::parseLocationBlock(ServerConfig& server)
 			ensureUnique(seen, tok);
 			consume();
 			parseClientMaxBodySize(loc.clientMaxBodySize);
+		} else if (name == "include") {
+			parseLocationInclude(loc, seen);
 		} else {
 			syntaxError(tok, std::string("unknown directive '") + name + "'");
 		}
 	}
-
-	server.locations.push_back(loc);
 }
 
 void ConfigParser::parseListen(ServerConfig& server)
@@ -413,4 +452,131 @@ std::size_t ConfigParser::parseSizeValue(const Token& tok)
 void ConfigParser::syntaxError(const Token& at, const std::string& msg) const
 {
 	throw ConfigError(ConfigError::SYNTAX, at.file, at.line, at.col, msg);
+}
+
+ConfigParser::Token ConfigParser::readIncludeArgs()
+{
+	consume();    // "include"
+	Token pathTok = consumeArg("include path");
+	expect(ConfigLexer::TOKEN_SEMI, "';' after include");
+	return pathTok;
+}
+
+void ConfigParser::parseTopInclude()
+{
+	Token pathTok = readIncludeArgs();
+	ensureDepth(pathTok);
+
+	const std::string resolved  = resolveIncludePath(pathTok.value);
+	const std::string canonical = canonicalizePath(resolved, pathTok);
+	ensureNoCycle(canonical, pathTok);
+	const std::string source = readFileToString(canonical, pathTok);
+
+	includeStack_.push_back(canonical);
+	ConfigLexer sublex(source, canonical);
+	ConfigLexer* prev = lex_;
+	lex_ = &sublex;
+	parseTopBody(true);
+	lex_ = prev;
+	includeStack_.pop_back();
+}
+
+void ConfigParser::parseServerInclude(ServerConfig& server,
+									std::set<std::string>& seen)
+{
+	Token pathTok = readIncludeArgs();
+	ensureDepth(pathTok);
+
+	const std::string resolved  = resolveIncludePath(pathTok.value);
+	const std::string canonical = canonicalizePath(resolved, pathTok);
+	ensureNoCycle(canonical, pathTok);
+	const std::string source = readFileToString(canonical, pathTok);
+
+	includeStack_.push_back(canonical);
+	ConfigLexer sublex(source, canonical);
+	ConfigLexer* prev = lex_;
+	lex_ = &sublex;
+	parseServerBody(server, seen, true);
+	lex_ = prev;
+	includeStack_.pop_back();
+}
+
+void ConfigParser::parseLocationInclude(LocationConfig& loc,
+										std::set<std::string>& seen)
+{
+	Token pathTok = readIncludeArgs();
+	ensureDepth(pathTok);
+
+	const std::string resolved  = resolveIncludePath(pathTok.value);
+	const std::string canonical = canonicalizePath(resolved, pathTok);
+	ensureNoCycle(canonical, pathTok);
+	const std::string source = readFileToString(canonical, pathTok);
+
+	includeStack_.push_back(canonical);
+	ConfigLexer sublex(source, canonical);
+	ConfigLexer* prev = lex_;
+	lex_ = &sublex;
+	parseLocationBody(loc, seen, true);
+	lex_ = prev;
+	includeStack_.pop_back();
+}
+
+std::string ConfigParser::resolveIncludePath(const std::string& argPath) const
+{
+	if (!argPath.empty() && argPath[0] == '/') {
+		return argPath;
+	}
+	const std::string currentFile = includeStack_.empty()
+									? rootPath_
+									: includeStack_.back();
+	const std::size_t slash = currentFile.find_last_of('/');
+	const std::string dir = (slash == std::string::npos)
+							? std::string(".")
+							: currentFile.substr(0, slash);
+	return dir + "/" + argPath;
+}
+
+std::string ConfigParser::canonicalizePath(const std::string& path,
+										const Token& at) const
+{
+	char buf[PATH_MAX];
+	if (realpath(path.c_str(), buf) == 0) {
+		throw ConfigError(ConfigError::SYNTAX, at.file, at.line, at.col,
+						std::string("cannot open included file '") + path
+						+ "'");
+	}
+	return std::string(buf);
+}
+
+std::string ConfigParser::readFileToString(const std::string& path,
+										const Token& at) const
+{
+	std::ifstream ifs(path.c_str());
+	if (!ifs.is_open()) {
+		throw ConfigError(ConfigError::SYNTAX, at.file, at.line, at.col,
+						std::string("cannot open included file '") + path
+						+ "'");
+	}
+	std::ostringstream oss;
+	oss << ifs.rdbuf();
+	return oss.str();
+}
+
+void ConfigParser::ensureNoCycle(const std::string& canonical, const Token& at)
+{
+	for (std::size_t i = 0; i < includeStack_.size(); ++i) {
+		if (includeStack_[i] == canonical) {
+			throw ConfigError(ConfigError::SYNTAX, at.file, at.line, at.col,
+						std::string("include cycle detected at '") + canonical
+						+ "'");
+		}
+	}
+}
+
+void ConfigParser::ensureDepth(const Token& at)
+{
+	if (includeStack_.size() >= kMaxIncludeDepth) {
+		throw ConfigError(ConfigError::SYNTAX, at.file, at.line, at.col,
+					std::string("include depth limit exceeded"));
+	}
 }
