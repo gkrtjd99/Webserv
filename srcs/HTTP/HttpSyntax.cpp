@@ -64,6 +64,15 @@ namespace HttpSyntax
 		return true;
 	}
 
+	bool isHttpVersion(const std::string& value)
+	{
+		return value.size() == 8
+			&& value.compare(0, 5, "HTTP/") == 0
+			&& std::isdigit(static_cast<unsigned char>(value[5]))
+			&& value[6] == '.'
+			&& std::isdigit(static_cast<unsigned char>(value[7]));
+	}
+
 	bool hasInvalidFieldValueChar(const std::string& value)
 	{
 		for(std::size_t i = 0; i < value.size(); i++)
@@ -173,7 +182,7 @@ namespace HttpSyntax
 		return true;
 	}
 
-	bool normalizeDecodedPath(const std::string& decoded,
+	HttpStatus normalizeDecodedPath(const std::string& decoded,
 			std::string& normalized)
 	{
 		std::vector<std::string> segments;
@@ -182,7 +191,7 @@ namespace HttpSyntax
 
 		if(decoded.empty() || decoded[0] != '/')
 		{
-			return false;
+			return HTTP_STATUS_BAD_REQUEST;
 		}
 
 		trailingSlash = decoded.size() > 1 && decoded[decoded.size() - 1] == '/';
@@ -211,7 +220,7 @@ namespace HttpSyntax
 			{
 				if(segments.empty())
 				{
-					return false;
+					return HTTP_STATUS_FORBIDDEN;
 				}
 				segments.pop_back();
 				continue;
@@ -232,6 +241,6 @@ namespace HttpSyntax
 		{
 			normalized += "/";
 		}
-		return true;
+		return HTTP_STATUS_NONE;
 	}
 }

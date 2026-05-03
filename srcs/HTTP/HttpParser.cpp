@@ -38,7 +38,7 @@ void HttpParser::resetPreservingBuffer()
 void HttpParser::resetState(bool clearBuffer)
 {
 	_state = READING_HEAD;
-	_errorStatus = 0;
+	_errorStatus = HTTP_STATUS_NONE;
 	if(clearBuffer)
 	{
 		_buffer.clear();
@@ -79,13 +79,13 @@ void HttpParser::parseHeadIfReady()
 	{
 		if(_buffer.size() > MAX_HEADER_SECTION_SIZE)
 		{
-			fail(431);
+			fail(HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE);
 		}
 		return;
 	}
 	if(pos + 4 > MAX_HEADER_SECTION_SIZE)
 	{
-		fail(431);
+		fail(HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE);
 		return;
 	}
 
@@ -108,7 +108,7 @@ void HttpParser::parseHeadIfReady()
 
 	if(requestLine.empty())
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 	parseStartLine(requestLine);
@@ -135,13 +135,13 @@ void HttpParser::parseHeadIfReady()
 
 		if(line.size() > MAX_HEADER_FIELD_LINE_SIZE)
 		{
-			fail(431);
+			fail(HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE);
 			return;
 		}
 		_headerCount++;
 		if(_headerCount > MAX_HEADER_COUNT)
 		{
-			fail(431);
+			fail(HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE);
 			return;
 		}
 		parseHeaderLine(line);
@@ -178,7 +178,7 @@ void HttpParser::parseStartLine(const std::string& line)
 			|| firstSpace == std::string::npos
 			|| firstSpace == 0)
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -188,7 +188,7 @@ void HttpParser::parseStartLine(const std::string& line)
 			|| line.find(' ', secondSpace + 1) != std::string::npos
 			|| secondSpace + 1 >= line.size())
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -198,25 +198,26 @@ void HttpParser::parseStartLine(const std::string& line)
 
 	if(!HttpSyntax::isToken(method))
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
 	if(uri.size() > MAX_REQUEST_TARGET_SIZE)
 	{
-		fail(414);
+		fail(HTTP_STATUS_URI_TOO_LONG);
 		return;
 	}
 
-	if(!_request.setRequestLine(method, uri, version))
+	HttpStatus requestLineStatus = _request.setRequestLine(method, uri, version);
+	if(requestLineStatus != HTTP_STATUS_NONE)
 	{
-		fail(400);
+		fail(requestLineStatus);
 		return;
 	}
 
 	if(!isSupportedHttpMethod(_request.method()))
 	{
-		fail(501);
+		fail(HTTP_STATUS_NOT_IMPLEMENTED);
 	}
 }
 
@@ -227,7 +228,7 @@ void HttpParser::parseHeaderLine(const std::string& line)
 
 	if(!HttpSyntax::splitFieldLine(line, name, value))
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -237,7 +238,7 @@ void HttpParser::parseHeaderLine(const std::string& line)
 	if((lowerName == "host" || lowerName == "transfer-encoding")
 			&& _request.hasHeader(lowerName))
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -245,7 +246,7 @@ void HttpParser::parseHeaderLine(const std::string& line)
 	{
 		if(_request.header(lowerName) != trimmedValue)
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 		}
 		return;
 	}
@@ -268,7 +269,7 @@ void HttpParser::parseBodyIfReady()
 
 	if(_contentLength > _bodyLimit)
 	{
-		fail(413);
+		fail(HTTP_STATUS_CONTENT_TOO_LARGE);
 		return;
 	}
 
@@ -291,14 +292,14 @@ void HttpParser::parseChunkedBodyIfReady()
 		{
 			if(_buffer.size() > MAX_CHUNK_SIZE_LINE_SIZE)
 			{
-				fail(400);
+				fail(HTTP_STATUS_BAD_REQUEST);
 			}
 			return;
 		}
 
 		if(lineEnd > MAX_CHUNK_SIZE_LINE_SIZE)
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
 
@@ -311,7 +312,7 @@ void HttpParser::parseChunkedBodyIfReady()
 		sizeLine = HttpHelper::trim(sizeLine);
 		if(sizeLine.empty())
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
 
@@ -321,13 +322,13 @@ void HttpParser::parseChunkedBodyIfReady()
 			int digit = HttpSyntax::hexValue(sizeLine[i]);
 			if(digit < 0)
 			{
-				fail(400);
+				fail(HTTP_STATUS_BAD_REQUEST);
 				return;
 			}
 			if(chunkSize > (std::numeric_limits<std::size_t>::max()
 						- static_cast<std::size_t>(digit)) / 16)
 			{
-				fail(413);
+				fail(HTTP_STATUS_CONTENT_TOO_LARGE);
 				return;
 			}
 			chunkSize = chunkSize * 16 + static_cast<std::size_t>(digit);
@@ -338,7 +339,7 @@ void HttpParser::parseChunkedBodyIfReady()
 		if(_request.body().size() > _bodyLimit
 				|| chunkSize > _bodyLimit - _request.body().size())
 		{
-			fail(413);
+			fail(HTTP_STATUS_CONTENT_TOO_LARGE);
 			return;
 		}
 
@@ -377,13 +378,13 @@ void HttpParser::parseChunkedBodyIfReady()
 
 				if(end == std::string::npos || end > trailerEnd)
 				{
-					fail(400);
+					fail(HTTP_STATUS_BAD_REQUEST);
 					return;
 				}
 
 				if(end - begin > MAX_HEADER_FIELD_LINE_SIZE)
 				{
-					fail(431);
+					fail(HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE);
 					return;
 				}
 
@@ -391,7 +392,7 @@ void HttpParser::parseChunkedBodyIfReady()
 				if(!HttpSyntax::splitFieldLine(trailerLine, trailerName,
 							trailerValue))
 				{
-					fail(400);
+					fail(HTTP_STATUS_BAD_REQUEST);
 					return;
 				}
 
@@ -410,7 +411,7 @@ void HttpParser::parseChunkedBodyIfReady()
 		if(_buffer[dataStart + chunkSize] != '\r'
 				|| _buffer[dataStart + chunkSize + 1] != '\n')
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
 
@@ -425,7 +426,7 @@ void HttpParser::parseHostHeader()
 
 	if(host.empty() || HttpSyntax::hasWhitespace(host))
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -439,7 +440,7 @@ void HttpParser::parseHostHeader()
 
 	if(host.find(':', colon + 1) != std::string::npos)
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 	
@@ -448,7 +449,7 @@ void HttpParser::parseHostHeader()
 
 	if(name.empty() || portString.empty())
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -457,14 +458,14 @@ void HttpParser::parseHostHeader()
 	{
 		if(!std::isdigit(static_cast<unsigned char>(portString[i])))
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
 
 		int digit = portString[i] - '0';
 		if(port > (0xffff - digit) / 10)
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
 
@@ -486,17 +487,22 @@ void HttpParser::validateHttpVersion()
 
 	if(version == "HTTP/1.0")
 	{
-		fail(505);
+		fail(HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED);
 		return;
 	}
-	fail(400);
+	if(HttpSyntax::isHttpVersion(version))
+	{
+		fail(HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED);
+		return;
+	}
+	fail(HTTP_STATUS_BAD_REQUEST);
 }
 
 void HttpParser::decideBodyMode()
 {
 	if(_request.hasHeader("content-length") && _request.hasHeader("transfer-encoding"))
 	{
-		fail(400);
+		fail(HTTP_STATUS_BAD_REQUEST);
 		return;
 	}
 
@@ -506,7 +512,7 @@ void HttpParser::decideBodyMode()
 
 		if(value.empty())
 		{
-			fail(400);
+			fail(HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
 
@@ -515,7 +521,7 @@ void HttpParser::decideBodyMode()
 		{
 			if(!std::isdigit(static_cast<unsigned char>(value[i])))
 			{
-				fail(400);
+				fail(HTTP_STATUS_BAD_REQUEST);
 				return;
 			}
 
@@ -524,7 +530,7 @@ void HttpParser::decideBodyMode()
 
 			if(_contentLength > (maxValue - digit) / 10)
 			{
-				fail(413);
+				fail(HTTP_STATUS_CONTENT_TOO_LARGE);
 				return;
 			}
 
@@ -547,9 +553,15 @@ void HttpParser::decideBodyMode()
 		std::string value = HttpHelper::toLowerString(
 				HttpHelper::trim(_request.header("transfer-encoding")));
 
+		if(value.empty())
+		{
+			fail(HTTP_STATUS_BAD_REQUEST);
+			return;
+		}
+
 		if(value != "chunked")
 		{
-			fail(400);
+			fail(HTTP_STATUS_NOT_IMPLEMENTED);
 			return;
 		}
 
@@ -561,7 +573,7 @@ void HttpParser::decideBodyMode()
 	_state = COMPLETE;
 }
 
-void HttpParser::fail(int status)
+void HttpParser::fail(HttpStatus status)
 {
 	_state = FAILED;
 	_errorStatus = status;
@@ -584,7 +596,7 @@ HttpParser::State HttpParser::state() const
 
 int HttpParser::errorStatus() const
 {
-	return _errorStatus;
+	return static_cast<int>(_errorStatus);
 }
 
 const HttpRequest& HttpParser::request() const

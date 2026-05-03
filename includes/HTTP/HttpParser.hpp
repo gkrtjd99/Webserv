@@ -2,6 +2,7 @@
 # define HTTPPARSER_HPP
 
 #include "HttpRequest.hpp"
+#include "HttpStatus.hpp"
 
 #include <cstddef>
 #include <string>
@@ -30,7 +31,7 @@ public:
 
 private:
 	State _state;
-	int _errorStatus;
+	HttpStatus _errorStatus;
 	std::string _buffer;
 	HttpRequest _request;
 	std::size_t _contentLength;
@@ -48,7 +49,7 @@ private:
 	void validateHttpVersion();
 	void decideBodyMode();
 	void parseChunkedBodyIfReady();
-	void fail(int status);
+	void fail(HttpStatus status);
 };
 
 #endif
