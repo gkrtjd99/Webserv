@@ -34,5 +34,4 @@ namespace HttpHelper
 
 		return s.substr(begin, end - begin);
 	}
-
 }

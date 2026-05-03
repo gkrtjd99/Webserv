@@ -24,7 +24,7 @@ public:
 
     const std::string& body() const;
 
-	void setRequestLine(const std::string& method,
+	bool setRequestLine(const std::string& method,
 					const std::string& uri,
 					const std::string& version);
 	void addHeader(const std::string& name,
@@ -54,7 +54,7 @@ private:
 	int _hostPort;
 	bool _hasHostPort;
 
-	void splitUri();
+	bool splitUri();
 };
 
 #endif

@@ -13,7 +13,7 @@ public:
 	{
 		READING_HEAD,
 		READING_BODY,
-		DONE,
+		COMPLETE,
 		FAILED,
 	};
 
@@ -22,9 +22,11 @@ public:
 	void feed(const char* data, std::size_t len);
 	void setBodyLimit(std::size_t n);
 	State state() const;
-	int getErrorStatus() const;
+	int errorStatus() const;
 	const HttpRequest& request() const;
+	const std::string& bufferedBytes() const;
 	void reset();
+	void resetPreservingBuffer();
 
 private:
 	State _state;
@@ -33,9 +35,11 @@ private:
 	HttpRequest _request;
 	std::size_t _contentLength;
 	std::size_t _bodyLimit;
+	std::size_t _headerCount;
 	bool _chunked;
 	bool _hasBodyLimit;
 
+	void resetState(bool clearBuffer);
 	void parseHeadIfReady();
 	void parseBodyIfReady();
 	void parseStartLine(const std::string& line);
@@ -43,6 +47,7 @@ private:
 	void parseHostHeader();
 	void validateHttpVersion();
 	void decideBodyMode();
+	void parseChunkedBodyIfReady();
 	void fail(int status);
 };
 
