@@ -64,6 +64,10 @@ ConfigParser::ConfigParser(const std::string& rootPath)
 
 Config ConfigParser::parse()
 {
+	// 같은 인스턴스로 재호출되어도 깨끗한 결과를 반환하도록 초기화한다.
+	result_ = Config();
+	includeStack_.clear();
+
 	std::ifstream ifs(rootPath_.c_str());
 	if (!ifs.is_open()) {
 		throw ConfigError(ConfigError::SYNTAX, rootPath_, 0, 0,

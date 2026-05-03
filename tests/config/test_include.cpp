@@ -127,6 +127,22 @@ void test_include_inside_location()
 	EXPECT_EQ(loc.methods.size(), static_cast<std::size_t>(2));
 }
 
+void test_parse_can_be_called_twice()
+{
+	TempDir tmp;
+	const std::string conf = tmp.path() + "/main.conf";
+	writeFile(conf, "server { listen 8080; location / { root "
+				+ tmp.path() + "; } }");
+
+	ConfigParser p(conf);
+	Config a = p.parse();
+	Config b = p.parse();
+
+	EXPECT_EQ(a.servers.size(), static_cast<std::size_t>(1));
+	EXPECT_EQ(b.servers.size(), static_cast<std::size_t>(1));
+	EXPECT_EQ(b.servers[0].port, 8080);
+}
+
 void test_include_state_restored_after_throw()
 {
 	TempDir tmp;
@@ -175,6 +191,7 @@ int main()
 	test_t_parse_9_include_depth_exceeded();
 	test_include_inside_location();
 	test_include_state_restored_after_throw();
+	test_parse_can_be_called_twice();
 	test_include_missing_file();
 	return webserv_tests::summarize("test_include");
 }
