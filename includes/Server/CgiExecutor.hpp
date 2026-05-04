@@ -1,6 +1,10 @@
 #ifndef CGIEXECUTOR_HPP
 # define CGIEXECUTOR_HPP
 
+#include "CgiEnvironment.hpp"
+#include "CgiProcess.hpp"
+#include "CgiResponseParser.hpp"
+#include "CgiTypes.hpp"
 #include "Config.hpp"
 #include "HttpRequest.hpp"
 
@@ -8,15 +12,6 @@
 #include <ctime>
 #include <string>
 #include <sys/types.h>
-
-struct CgiMatch
-{
-	std::string extension;
-	std::string interpreter;
-	std::string scriptFilename;
-	std::string scriptName;
-	std::string pathInfo;
-};
 
 class CgiExecutor
 {
@@ -56,22 +51,17 @@ public:
 
 private:
 	State _state;
-	int _inputFd;
-	int _outputFd;
-	pid_t _pid;
+	CgiProcess _process;
+	CgiEnvironment _environment;
+	CgiResponseParser _responseParser;
 	std::string _input;
 	std::size_t _inputOffset;
 	std::string _output;
 	std::time_t _startedAt;
 	int _errorStatus;
-	bool _childReaped;
 
 	void resetInactive();
 	bool fail(int status);
-	void closeInput();
-	void closeOutput();
-	void killChild();
-	void reapChild();
 };
 
 #endif

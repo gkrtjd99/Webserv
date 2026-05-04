@@ -16,9 +16,23 @@ SRCS := srcs/main.cpp \
 	srcs/HTTP/HttpRequest.cpp \
 	srcs/HTTP/HttpSyntax.cpp \
 	srcs/HTTP/Router.cpp \
+	srcs/Server/AutoindexBuilder.cpp \
+	srcs/Server/CgiEnvironment.cpp \
 	srcs/Server/CgiExecutor.cpp \
+	srcs/Server/CgiFdRegistry.cpp \
+	srcs/Server/CgiProcess.cpp \
+	srcs/Server/CgiResponseParser.cpp \
 	srcs/Server/Connection.cpp \
-	srcs/Server/EventLoop.cpp
+	srcs/Server/DeleteHandler.cpp \
+	srcs/Server/EventLoop.cpp \
+	srcs/Server/FileResource.cpp \
+	srcs/Server/ListenSocketManager.cpp \
+	srcs/Server/PathResolver.cpp \
+	srcs/Server/PollFdBuilder.cpp \
+	srcs/Server/RequestDispatcher.cpp \
+	srcs/Server/ResponseBuilder.cpp \
+	srcs/Server/StaticHandler.cpp \
+	srcs/Server/UploadHandler.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(OBJS:.o=.d)
 
