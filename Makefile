@@ -16,6 +16,7 @@ SRCS := srcs/main.cpp \
 	srcs/HTTP/HttpRequest.cpp \
 	srcs/HTTP/HttpSyntax.cpp \
 	srcs/HTTP/Router.cpp \
+	srcs/Server/CgiExecutor.cpp \
 	srcs/Server/Connection.cpp \
 	srcs/Server/EventLoop.cpp
 OBJS := $(SRCS:.cpp=.o)

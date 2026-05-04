@@ -2,6 +2,8 @@
 
 이 문서는 `server` 브랜치에서 CGI 필수 구현, CGI 환경 변수 구성, CGI 라우팅/판별을 마무리하기 위한 작업 계획이다.
 
+subject PDF 전체 요구사항, 허용 함수, mandatory/bonus 확장 기준은 `en.subject.pdf` 원문을 따른다.
+
 현재 `main` 기준 서버 런타임은 static GET skeleton이다. client fd만 `poll()`에 등록하고, `Connection` 상태도 `READING`/`WRITING`만 가진다. CGI 구현은 이 구조를 유지하되, CGI pipe fd와 child process를 같은 `poll()` 루프에 추가하는 방향으로 진행한다.
 
 ## 1. 목표 범위
@@ -145,16 +147,17 @@ location /cgi-bin {
 3. tail을 path segment 단위로 왼쪽부터 누적한다.
 4. 누적 path의 마지막 segment가 `location.cgi`의 extension 중 하나로 끝나면 script 후보로 본다.
 5. 후보 script를 `location.root + 후보 tail`로 filesystem path로 만든다.
-6. `realpath()`로 script canonical path를 얻는다.
-7. `realpath(location.root)` 아래인지 확인한다.
+6. 후보 path를 lexical normalization helper로 검증한다.
+7. 정규화된 relative path가 location root 밖으로 나가지 않는지 확인한다.
 8. regular file이고 read 가능해야 한다.
 9. script 뒤 남은 tail은 `PATH_INFO`로 둔다.
 
 주의:
 
 - URL path normalization은 Owner A 결과를 믿는다.
-- filesystem escape 방지는 server/handler 단계에서 `realpath()` root-prefix 검증으로 처리한다.
+- filesystem escape 방지는 Owner A의 URL normalization과 C의 lexical root containment 검증으로 처리한다.
 - `..` 문자열 자체를 금지하지 않는다. `file..txt`, `...` 같은 정상 이름을 막지 않기 위해서다.
+- subject PDF 허용 함수 목록에는 `realpath`, `lstat`, `readlink`, `openat`이 없다. 따라서 symlink가 root 밖을 가리키는 경우까지 완벽히 막는 canonical filesystem 검증은 허용 함수만으로는 구현할 수 없다. subject 준수를 우선하면 symlink escape 방어는 제한적이다.
 
 ## 5. CgiExecutor 설계
 
@@ -268,7 +271,7 @@ argv[2] = NULL
 | `GATEWAY_INTERFACE` | `CGI/1.1` |
 | `SERVER_PROTOCOL` | `request.version()` |
 | `REQUEST_METHOD` | method 문자열 |
-| `SCRIPT_FILENAME` | canonical script filesystem path |
+| `SCRIPT_FILENAME` | subject 허용 함수만 쓰는 모드에서는 lexical 검증을 통과한 script filesystem path |
 | `SCRIPT_NAME` | URL상 script path |
 | `PATH_INFO` | script 뒤 남은 path, 없으면 빈 문자열 |
 | `QUERY_STRING` | `request.query()` |
@@ -347,7 +350,7 @@ Connection에 추가할 값:
 - matched server/location pointer 또는 index
 - `CgiExecutor`
 - response buffer/write offset 유지
-- last activity time
+- last activity tick
 
 ## 9. CGI stdout 파싱
 
@@ -401,8 +404,8 @@ CGI 정상 종료 시:
 
 timeout:
 
-- CGI 시작 시간을 저장한다.
-- 기본 timeout은 5초 또는 runtime policy와 별도 값으로 문서화한다.
+- CGI 시작 tick을 저장한다. `time`, `gettimeofday`, `clock_gettime`은 subject PDF 허용 함수 목록에 없으므로 사용하지 않는다.
+- 기본 timeout은 `poll()` timeout tick 기준으로 문서화한다.
 - timeout이면 child kill 후 `504 Gateway Timeout`.
 
 ## 11. 구현 커밋 단위
@@ -418,7 +421,7 @@ timeout:
 3. `feat(server): add CGI script matching`
    - `CgiMatch`
    - extension/interpreter 판별
-   - `SCRIPT_NAME`, `PATH_INFO`, canonical path 검증
+   - `SCRIPT_NAME`, `PATH_INFO`, subject 허용 함수 기반 path 검증
 4. `feat(server): add CgiExecutor process startup`
    - pipe/fork/dup2/execve
    - envp/argv 구성
@@ -463,7 +466,7 @@ print("body=" + body)
 - interpreter exec 실패 -> 502
 - malformed CGI header -> 502
 - CGI timeout -> 504
-- root 밖 symlink script 실행 차단
+- root 밖 path script 실행 차단. symlink escape까지의 canonical 검증은 subject 허용 함수만으로는 제한적이다.
 - method not allowed -> 405 + Allow
 
 ## 13. 완료 기준
@@ -476,6 +479,151 @@ CGI 작업 완료 기준:
 - CGI stdout은 HTTP response로 변환되어 `Content-Length`가 붙는다.
 - child process가 정상/비정상/timeout 모든 경로에서 회수된다.
 - client disconnect 시 CGI child와 pipe fd가 정리된다.
-- script path가 location root 밖으로 나가지 않는다.
+- script path가 lexical path 검증 기준으로 location root 밖으로 나가지 않는다.
 - `make`가 통과한다.
 - 위 테스트 계획의 기본 CGI GET/POST/query/PATH_INFO 케이스가 통과한다.
+
+## 14. Subject 허용 함수 제약
+
+`en.subject.pdf` 기준 허용 함수는 아래 범위다.
+
+```text
+execve, pipe, strerror, gai_strerror, errno, dup, dup2, fork, socketpair
+htons, htonl, ntohs, ntohl
+select, poll, epoll_create, epoll_ctl, epoll_wait, kqueue, kevent
+socket, accept, listen, send, recv, chdir, bind, connect
+getaddrinfo, freeaddrinfo, setsockopt, getsockname, getprotobyname
+fcntl, close, read, write, waitpid, kill, signal
+access, stat, open, opendir, readdir, closedir
+```
+
+이 프로젝트의 C 런타임 구현은 이식성을 위해 `poll()` 하나를 기준으로 잡는다. `epoll`과 `kqueue`는 subject상 허용되지만 플랫폼별 코드가 갈라지므로 쓰지 않는다.
+
+허용 함수 목록에 없으므로 사용하지 않을 함수:
+
+```text
+realpath, lstat, readlink, openat
+unlink, remove, rename
+inet_ntoa, inet_ntop
+sendfile, accept4, pipe2
+```
+
+중요 제약:
+
+- read/write 이후 `errno` 값으로 서버 동작을 조정하는 것은 subject에서 금지한다. `errno`가 허용 함수 목록에 있더라도 `recv`, `send`, pipe `read/write` 직후 `EAGAIN`, `EWOULDBLOCK`, `EINTR` 분기는 하지 않는다.
+- `realpath`, `lstat`, `readlink`, `openat` 없이 symlink escape를 완벽히 막는 것은 불가능하다. subject 준수 모드에서는 Owner A의 URI normalization과 lexical path containment를 보안 경계로 삼는다.
+- `unlink`, `remove`, `rename` 없이 실제 파일 삭제는 불가능하다. DELETE 구현은 subject 허용 함수 목록과 필수 요구사항 사이에 충돌이 있으므로 팀/평가자 확인이 필요하다.
+- `std::time` 같은 C++98 표준 라이브러리 기능은 external function 목록과 같은 층위로 금지하지 않는다. timeout 구현은 `std::time` 또는 `poll()` tick 방식 중 이식성과 테스트 편의성을 보고 선택한다.
+
+현재 로컬 구현 중 subject 허용 함수 준수를 위해 수정해야 하는 C 파트:
+
+| 위치 | 현재 사용 | 수정 방향 |
+| --- | --- | --- |
+| `EventLoop` static/CGI path 검증 | `realpath` | lexical normalized relative path 검증으로 교체 |
+| `EventLoop` remote address 저장 | `inet_ntoa` | `ntohl` + C++ 문자열 변환으로 IPv4 문자열 생성 |
+
+B 파트에도 `ConfigParser` include canonicalization에서 `realpath` 사용이 있으므로, 전체 subject compliance를 맞출 때는 B와 함께 수정한다.
+
+## 15. Post-CGI Runtime Completion Plan
+
+CGI 필수 구현 이후 남은 런타임 항목은 정확히 아래 8개다.
+
+| 항목 | 구현 가능성 | 비고 |
+| --- | --- | --- |
+| `error_page` 적용 | 허용 함수만으로 가능 | `open/read/close/stat/access` 사용 |
+| POST upload | 허용 함수만으로 가능 | `open/write/close` 사용, upload dir은 Config가 보장 |
+| DELETE | 허용 함수만으로는 실제 삭제 불가능 | `unlink/remove/rename`이 PDF 허용 목록에 없음 |
+| autoindex | 허용 함수만으로 가능 | `opendir/readdir/closedir` 사용 |
+| multiple server / Host routing | 허용 함수만으로 가능 | A의 `matchServer` 사용 |
+| 여러 listen socket / bind host 반영 | 허용 함수만으로 가능 | `socket/bind/listen/poll` 사용 |
+| keep-alive / pipelining | 허용 함수만으로 가능 | A parser의 buffer 보존 API 사용 |
+| subject-compliant I/O policy | 허용 함수만으로 가능 | 단, read/write 후 errno 분기 금지 |
+
+## 16. 확장 가능한 Handler 구조
+
+새 HTTP 메서드가 추가될 때 `EventLoop::handleRequest()`에 메서드별 `if`를 계속 추가하지 않는다. 공통 request 처리 흐름과 method handler를 분리한다.
+
+공통 흐름:
+
+```text
+match server
+match location
+redirect
+method allowed check
+CGI match
+method handler dispatch
+501
+```
+
+공통 context:
+
+```cpp
+struct RequestContext
+{
+    const ServerConfig* server;
+    const LocationConfig* location;
+    const HttpRequest* request;
+    std::string remoteAddress;
+};
+```
+
+method registry:
+
+```cpp
+typedef std::string (EventLoop::*MethodHandler)(const RequestContext&) const;
+
+std::map<HttpMethod, MethodHandler> _methodHandlers;
+```
+
+초기 등록:
+
+```cpp
+_methodHandlers[HTTP_GET] = &EventLoop::handleStaticGet;
+_methodHandlers[HTTP_POST] = &EventLoop::handleUploadPost;
+_methodHandlers[HTTP_DELETE] = &EventLoop::handleDelete;
+```
+
+새 메서드를 추가할 때 필요한 변경:
+
+1. A/B와 `HttpMethod` enum 및 config `methods` 문법 합의
+2. 새 handler 함수 추가
+3. `_methodHandlers`에 등록
+4. 해당 메서드의 body 필요 여부, status 매핑, 테스트 추가
+
+CGI는 method registry보다 앞에서 판별한다. CGI script는 `REQUEST_METHOD`로 메서드를 직접 받기 때문이다.
+
+## 17. 남은 항목 구현 순서
+
+1. Subject compliance refactor
+   - `realpath`, `inet_ntoa` 제거 또는 허용 여부 확인
+   - path helper를 lexical containment 기준으로 통일
+   - I/O wrapper는 `errno`를 보지 않는 정책으로 통일
+2. Runtime foundation
+   - `RequestContext`
+   - method handler registry
+   - error response가 `ServerConfig`를 받을 수 있는 구조
+3. Multiple server/listen socket
+   - `EventLoop`가 전체 `Config` 또는 server vector를 받도록 변경
+   - listen endpoint별 fd map 구성
+   - accepted connection에 server 후보 목록 연결
+   - head parse 후 `matchServer`/`matchLocation`
+4. Custom error page
+   - `server.errorPages[status]` lookup
+   - 내부 URI를 static file로만 처리
+   - 실패 시 기본 error body fallback
+5. POST upload
+   - `upload_store` 아래 파일 생성
+   - `O_CREAT | O_EXCL | O_WRONLY`
+   - 성공 시 `201 Created`와 `Location`
+6. DELETE policy 결정
+   - strict subject mode에서는 실제 삭제 불가능을 문서화
+   - 팀 합의로 `unlink`를 허용할 경우에만 실제 삭제 구현
+7. Autoindex
+   - index 우선
+   - autoindex off면 `403`
+   - autoindex on이면 escaped HTML listing
+8. Keep-alive/pipelining
+   - response 후 close 여부 판단
+   - `resetPreservingBuffer()` 사용
+   - pipeline 처리 상한 적용
+   - timeout은 `poll()` tick 기반

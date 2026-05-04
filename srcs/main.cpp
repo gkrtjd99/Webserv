@@ -29,7 +29,7 @@ int main(int argc, char** argv)
 		config = Config::parse(configPath);
 		if (config.servers.empty())
 			throw std::runtime_error("no server configuration");
-		EventLoop eventLoop(config.servers[0]);
+		EventLoop eventLoop(config);
 
 		eventLoop.run();
 	}
