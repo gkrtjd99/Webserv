@@ -6,6 +6,10 @@ CPPFLAGS := -Iincludes -Iincludes/Config -Iincludes/HTTP -Iincludes/Server
 
 SRCS := srcs/main.cpp \
 	srcs/Config/Config.cpp \
+	srcs/Config/ConfigError.cpp \
+	srcs/Config/ConfigLexer.cpp \
+	srcs/Config/ConfigParser.cpp \
+	srcs/Config/ConfigValidator.cpp \
 	srcs/HTTP/HttpHelper.cpp \
 	srcs/HTTP/HttpMethod.cpp \
 	srcs/HTTP/HttpParser.cpp \
