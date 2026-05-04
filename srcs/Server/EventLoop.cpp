@@ -201,25 +201,14 @@ namespace
 	{
 		std::string result;
 
-		if(methods.find(HTTP_GET) != methods.end())
-		{
-			result += "GET";
-		}
-		if(methods.find(HTTP_POST) != methods.end())
+		for(std::set<HttpMethod>::const_iterator it = methods.begin();
+				it != methods.end(); ++it)
 		{
 			if(!result.empty())
 			{
 				result += ", ";
 			}
-			result += "POST";
-		}
-		if(methods.find(HTTP_DELETE) != methods.end())
-		{
-			if(!result.empty())
-			{
-				result += ", ";
-			}
-			result += "DELETE";
+			result += httpMethodToString(*it);
 		}
 		return result;
 	}
@@ -414,7 +403,9 @@ int EventLoop::openListenSocket(const std::string& host, int port)
 
 void EventLoop::setNonBlocking(int fd)
 {
-	if(fcntl(fd, F_SETFL, O_NONBLOCK) < 0)
+	int flags = fcntl(fd, F_GETFL, 0);
+
+	if(flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
 	{
 		close(fd);
 		throw std::runtime_error("fcntl failed");
@@ -973,8 +964,8 @@ std::string EventLoop::handleGet(const HttpRequest& request,
 			{
 				if(location.autoindex)
 				{
-					return buildAutoindex(request, location, directoryPath,
-							keepAlive);
+						return buildAutoindex(request, server, location,
+								directoryPath, keepAlive);
 				}
 				return buildErrorResponse(403, &server, keepAlive);
 			}
@@ -1002,8 +993,8 @@ std::string EventLoop::handleGet(const HttpRequest& request,
 		{
 			if(location.autoindex)
 			{
-				return buildAutoindex(request, location, directoryPath,
-						keepAlive);
+					return buildAutoindex(request, server, location,
+							directoryPath, keepAlive);
 			}
 			return buildErrorResponse(403, &server, keepAlive);
 		}
@@ -1054,11 +1045,12 @@ std::string EventLoop::handleUpload(const HttpRequest& request,
 			ssize_t n = write(fd, request.body().data() + offset,
 					request.body().size() - offset);
 
-			if(n <= 0)
-			{
-				close(fd);
-				return buildErrorResponse(500, &server, keepAlive);
-			}
+				if(n <= 0)
+				{
+					close(fd);
+					std::remove(path.c_str());
+					return buildErrorResponse(500, &server, keepAlive);
+				}
 			offset += static_cast<std::size_t>(n);
 		}
 		close(fd);
@@ -1116,6 +1108,7 @@ std::string EventLoop::handleRedirect(const LocationConfig& location,
 }
 
 std::string EventLoop::buildAutoindex(const HttpRequest& request,
+		const ServerConfig& server,
 		const LocationConfig& location,
 		const std::string& directoryPath,
 		bool keepAlive) const
@@ -1126,7 +1119,7 @@ std::string EventLoop::buildAutoindex(const HttpRequest& request,
 
 	if(dir == NULL)
 	{
-		return buildErrorResponse(403, NULL, keepAlive);
+		return buildErrorResponse(403, &server, keepAlive);
 	}
 	if(base.empty() || base[base.size() - 1] != '/')
 	{

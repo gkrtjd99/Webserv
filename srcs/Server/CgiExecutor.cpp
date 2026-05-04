@@ -137,7 +137,7 @@ namespace
 		}
 	}
 
-	std::string buildSimpleResponse(int status)
+	std::string buildSimpleResponse(int status, bool keepAlive)
 	{
 		std::string body = reasonPhrase(status);
 		std::ostringstream response;
@@ -145,7 +145,8 @@ namespace
 		body += "\n";
 		response << "HTTP/1.1 " << status << " " << reasonPhrase(status)
 			<< "\r\n";
-		response << "Connection: close\r\n";
+		response << "Connection: " << (keepAlive ? "keep-alive" : "close")
+			<< "\r\n";
 		response << "Content-Length: " << body.size() << "\r\n";
 		response << "Content-Type: text/plain\r\n";
 		response << "\r\n";
@@ -170,7 +171,13 @@ namespace
 
 	bool setNonBlocking(int fd)
 	{
-		return fcntl(fd, F_SETFL, O_NONBLOCK) >= 0;
+		int flags = fcntl(fd, F_GETFL, 0);
+
+		if(flags < 0)
+		{
+			return false;
+		}
+		return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
 	}
 
 	void closeIfOpen(int& fd)
@@ -338,7 +345,7 @@ bool CgiExecutor::start(const HttpRequest& request,
 		if(dup2(inputPipe[0], STDIN_FILENO) < 0
 				|| dup2(outputPipe[1], STDOUT_FILENO) < 0)
 		{
-			_exit(1);
+			std::exit(1);
 		}
 		closeIfOpen(inputPipe[0]);
 		closeIfOpen(inputPipe[1]);
@@ -350,9 +357,12 @@ bool CgiExecutor::start(const HttpRequest& request,
 		buildCharArray(argvStrings, argv);
 		envStrings = buildEnvironment(request, server, match, remoteAddress);
 		buildCharArray(envStrings, envp);
-		chdir(directoryName(match.scriptFilename).c_str());
+		if(chdir(directoryName(match.scriptFilename).c_str()) < 0)
+		{
+			std::exit(1);
+		}
 		execve(match.interpreter.c_str(), &argv[0], &envp[0]);
-		_exit(1);
+		std::exit(1);
 	}
 
 	closeIfOpen(inputPipe[0]);
@@ -502,10 +512,10 @@ std::string CgiExecutor::buildHttpResponse(bool keepAlive) const
 		delimiter = _output.find("\n\n");
 		delimiterLength = 2;
 	}
-	if(delimiter == std::string::npos)
-	{
-		return buildSimpleResponse(502);
-	}
+		if(delimiter == std::string::npos)
+		{
+			return buildSimpleResponse(502, keepAlive);
+		}
 	headerBlock = _output.substr(0, delimiter);
 	body = _output.substr(delimiter + delimiterLength);
 	lines.str(headerBlock);
@@ -525,20 +535,20 @@ std::string CgiExecutor::buildHttpResponse(bool keepAlive) const
 			continue;
 		}
 		colon = line.find(':');
-		if(colon == std::string::npos || colon == 0)
-		{
-			return buildSimpleResponse(502);
-		}
+			if(colon == std::string::npos || colon == 0)
+			{
+				return buildSimpleResponse(502, keepAlive);
+			}
 		name = line.substr(0, colon);
 		value = trim(line.substr(colon + 1));
 		lowerName = toLower(name);
 		if(lowerName == "status")
 		{
 			int parsedStatus = parseStatusValue(value);
-			if(parsedStatus < 100 || parsedStatus > 599)
-			{
-				return buildSimpleResponse(502);
-			}
+				if(parsedStatus < 100 || parsedStatus > 599)
+				{
+					return buildSimpleResponse(502, keepAlive);
+				}
 			status = parsedStatus;
 			continue;
 		}

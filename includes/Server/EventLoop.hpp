@@ -78,10 +78,11 @@ private:
 			bool keepAlive) const;
 	std::string handleRedirect(const LocationConfig& location,
 			bool keepAlive) const;
-	std::string buildAutoindex(const HttpRequest& request,
-			const LocationConfig& location,
-			const std::string& directoryPath,
-			bool keepAlive) const;
+		std::string buildAutoindex(const HttpRequest& request,
+				const ServerConfig& server,
+				const LocationConfig& location,
+				const std::string& directoryPath,
+				bool keepAlive) const;
 	std::string build405Response(const ServerConfig& server,
 			const LocationConfig& location,
 			bool keepAlive) const;
