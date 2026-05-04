@@ -67,7 +67,7 @@ const std::string& HttpRequest::body() const
 	return _body;
 }
 
-bool HttpRequest::setRequestLine(const std::string& method,
+HttpStatus HttpRequest::setRequestLine(const std::string& method,
 					const std::string& uri,
 					const std::string& version)
 {
@@ -135,18 +135,19 @@ void HttpRequest::setHostPort(int port)
 	_hasHostPort = true;
 }
 
-bool HttpRequest::splitUri()
+HttpStatus HttpRequest::splitUri()
 {
 	std::size_t pos = _uri.find('?');
 	std::string rawPath;
 	std::string decodedPath;
+	HttpStatus status = HTTP_STATUS_NONE;
 
 	if(_uri.empty() || _uri.find('#') != std::string::npos
 			|| _uri[0] != '/')
 	{
 		_path.clear();
 		_query.clear();
-		return false;
+		return HTTP_STATUS_BAD_REQUEST;
 	}
 
 	if(pos == std::string::npos)
@@ -167,13 +168,19 @@ bool HttpRequest::splitUri()
 	}
 
 	if(!HttpSyntax::percentDecodePath(rawPath, decodedPath)
-			|| !HttpSyntax::normalizeDecodedPath(decodedPath, _path)
 			|| !HttpSyntax::percentTripletsAreValid(_query))
 	{
 		_path.clear();
 		_query.clear();
-		return false;
+		return HTTP_STATUS_BAD_REQUEST;
+	}
+	status = HttpSyntax::normalizeDecodedPath(decodedPath, _path);
+	if(status != HTTP_STATUS_NONE)
+	{
+		_path.clear();
+		_query.clear();
+		return status;
 	}
 
-	return true;
+	return HTTP_STATUS_NONE;
 }

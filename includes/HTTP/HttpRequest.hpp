@@ -2,6 +2,7 @@
 # define HTTPREQUEST_HPP
 
 #include "HttpMethod.hpp"
+#include "HttpStatus.hpp"
 
 #include <string>
 #include <map>
@@ -24,7 +25,7 @@ public:
 
     const std::string& body() const;
 
-	bool setRequestLine(const std::string& method,
+	HttpStatus setRequestLine(const std::string& method,
 					const std::string& uri,
 					const std::string& version);
 	void addHeader(const std::string& name,
@@ -54,7 +55,7 @@ private:
 	int _hostPort;
 	bool _hasHostPort;
 
-	bool splitUri();
+	HttpStatus splitUri();
 };
 
 #endif
