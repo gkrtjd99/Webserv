@@ -321,25 +321,34 @@ EventLoop::~EventLoop()
 	}
 }
 
-void EventLoop::run()
+void EventLoop::run(const volatile sig_atomic_t* shutdownRequested)
 {
 	std::vector<struct pollfd> pollFds;
 
 	openListenSockets();
-	while(true)
+	while(shutdownRequested == NULL || !*shutdownRequested)
 	{
-		int timeout = hasActiveCgi() ? 1000 : -1;
+		int timeout = (hasActiveCgi() || shutdownRequested != NULL) ? 1000 : -1;
+		int ready;
 
 		buildPollFds(pollFds);
-		if(poll(&pollFds[0], pollFds.size(), timeout) < 0)
+		ready = poll(&pollFds[0], pollFds.size(), timeout);
+		if(shutdownRequested != NULL && *shutdownRequested)
+		{
+			break;
+		}
+		if(ready < 0)
 		{
 			throw std::runtime_error("poll failed");
 		}
-		for(std::size_t i = 0; i < pollFds.size(); ++i)
+		if(ready > 0)
 		{
-			if(pollFds[i].revents != 0)
+			for(std::size_t i = 0; i < pollFds.size(); ++i)
 			{
-				handleReadyFd(pollFds[i]);
+				if(pollFds[i].revents != 0)
+				{
+					handleReadyFd(pollFds[i]);
+				}
 			}
 		}
 		checkCgiTimeouts();

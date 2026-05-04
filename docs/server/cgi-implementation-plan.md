@@ -594,4 +594,5 @@ CGI는 method registry보다 앞에서 판별한다. CGI script는 `REQUEST_METH
 2. `./webserv` 로 `config/default.conf` 기본 실행 확인
 3. static/error_page/autoindex/upload/DELETE/CGI/multi-listen/pipeline 스모크 테스트
 4. 기존 config parser/validator 테스트
-5. `realpath`, `_exit`, `inet_ntoa`, `inet_ntop`, `accept4`, `pipe2`, `sendfile`, `errno` grep 확인
+5. `SIGINT`/`SIGTERM` 종료 시 `EventLoop`가 poll loop를 정상 탈출하고 destructor 정리 경로를 타는지 확인
+6. `realpath`, `_exit`, `inet_ntoa`, `inet_ntop`, `accept4`, `pipe2`, `sendfile`, `errno` grep 확인

@@ -5,6 +5,7 @@
 #include "Connection.hpp"
 
 #include <map>
+#include <signal.h>
 #include <set>
 #include <string>
 #include <vector>
@@ -19,7 +20,7 @@ public:
 
 	~EventLoop();
 
-	void run();
+		void run(const volatile sig_atomic_t* shutdownRequested);
 
 private:
 	std::vector<ServerConfig> _servers;

@@ -65,12 +65,14 @@ listen()
 `poll()` 은 `EventLoop::run()` 안에 한 번만 있다.
 
 ```text
-while true
+while shutdown flag is not set
     build pollfd list
-    poll()
+    poll(timeout)
     for each ready fd
         handleReadyFd(fd)
 ```
+
+`SIGINT`, `SIGTERM` 은 signal handler에서 정리 작업을 직접 하지 않고 `sig_atomic_t` shutdown flag만 세운다. `EventLoop::run()` 은 이 flag를 보고 poll loop를 정상 탈출한다. shutdown flag가 연결된 경우 `poll()` timeout을 1000ms로 두어 signal이 poll을 직접 깨우지 않는 환경에서도 최대 1초 안에 destructor 경로로 들어간다.
 
 `pollfd` 관심 이벤트는 현재 아래 fd들을 쓴다.
 
