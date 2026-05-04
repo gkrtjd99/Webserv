@@ -1,51 +1,63 @@
 #ifndef EVENTLOOP_HPP
 # define EVENTLOOP_HPP
 
+#include "CgiFdRegistry.hpp"
 #include "Config.hpp"
 #include "Connection.hpp"
+#include "ListenSocketManager.hpp"
+#include "PollFdBuilder.hpp"
+#include "RequestDispatcher.hpp"
 
 #include <map>
+#include <signal.h>
+#include <set>
 #include <string>
 #include <vector>
 
+struct CgiMatch;
 class HttpRequest;
 
 class EventLoop
 {
 public:
-	explicit EventLoop(const ServerConfig& server);
+	explicit EventLoop(const Config& config);
 
 	~EventLoop();
 
-	void run();
+	void run(const volatile sig_atomic_t* shutdownRequested);
 
 private:
-	ServerConfig _server;
-	int _listenFd;
+	std::vector<ServerConfig> _servers;
+	RequestDispatcher _dispatcher;
+	ListenSocketManager _listenSockets;
+	PollFdBuilder _pollFds;
+	CgiFdRegistry _cgiFds;
 	std::map<int, Connection> _connections;
 
 	EventLoop(const EventLoop& other);
 	EventLoop& operator=(const EventLoop& other);
 
-	int openListenSocket(int port);
-	void setNonBlocking(int fd);
+	void openListenSockets();
 	void buildPollFds(std::vector<struct pollfd>& pollFds) const;
 	void handleReadyFd(const struct pollfd& pfd);
 	void handleListenFd(int fd);
 	void handleClientRead(int fd);
 	void handleClientWrite(int fd);
+	void processParserState(int fd, Connection& connection);
+	void handleCgiInput(int fd);
+	void handleCgiOutput(int fd);
 	void closeConnection(int fd);
-	std::string handleRequest(const HttpRequest& request) const;
-	std::string handleGet(const HttpRequest& request) const;
-	std::string buildResponse(int status,
-			const std::string& body,
-			const std::string& contentType) const;
-	std::string buildErrorResponse(int status) const;
-	std::string buildFilePath(const LocationConfig& location,
-			const std::string& requestPath) const;
-	bool readRegularFile(const std::string& path, std::string& body) const;
-	const char* statusReason(int status) const;
-	const char* contentTypeForPath(const std::string& path) const;
+	void handleCompleteRequest(int fd, Connection& connection);
+	void prepareBodyLimit(Connection& connection);
+	void startCgi(int fd,
+			Connection& connection,
+			const HttpRequest& request,
+			const ServerConfig& server,
+			const LocationConfig& location,
+			const CgiMatch& match);
+	void failCgi(int fd, int status);
+	bool hasActiveCgi() const;
+	void checkCgiTimeouts();
 };
 
 #endif

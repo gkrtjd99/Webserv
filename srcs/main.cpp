@@ -4,34 +4,45 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <signal.h>
 #include <stdexcept>
 #include <string>
 
-/**
- * config 파일 경로는 argv[1] 만 사용한다.
- * B 확인 필요: subject 의 default path 허용 정책을 쓸지, 인자 없으면 실패할지 최종 결정한다.
- */
+namespace
+{
+	volatile sig_atomic_t g_shutdownRequested = 0;
+
+	void handleShutdownSignal(int)
+	{
+		g_shutdownRequested = 1;
+	}
+}
+
 int main(int argc, char** argv)
 {
 	Config config;
 
-	if (argc != 2)
+	if (argc > 2)
 	{
 		std::cerr << "usage: ./webserv [configuration file]" << std::endl;
 		return EXIT_FAILURE;
 	}
 	try
 	{
-		const std::string configPath = argv[1];
+		const std::string configPath = (argc == 2)
+			? std::string(argv[1]) : std::string("config/default.conf");
 
 		if (configPath.empty())
 			throw std::runtime_error("empty configuration file path");
 		config = Config::parse(configPath);
 		if (config.servers.empty())
 			throw std::runtime_error("no server configuration");
-		EventLoop eventLoop(config.servers[0]);
+		if (signal(SIGINT, handleShutdownSignal) == SIG_ERR
+				|| signal(SIGTERM, handleShutdownSignal) == SIG_ERR)
+			throw std::runtime_error("signal setup failed");
+		EventLoop eventLoop(config);
 
-		eventLoop.run();
+		eventLoop.run(&g_shutdownRequested);
 	}
 	catch (const std::exception& error)
 	{
