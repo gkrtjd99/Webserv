@@ -80,6 +80,8 @@ while true
 
 CGI pipe fd 는 아직 없다. CGI 를 붙일 때도 별도 loop 를 만들지 않고 같은 `poll()` 목록에 넣는다.
 
+CGI 구현 계획은 [cgi-implementation-plan.md](cgi-implementation-plan.md)에 둔다.
+
 ## Accept Flow
 
 listen fd 가 `POLLIN` 이면 client 를 하나 accept 한다.
