@@ -4,3 +4,7 @@ en.subject.pdf
 en.subject.txt
 .DS_Store
 tests/bin/
+
+TODO.md
+compile_commands.json
+.obsidian/
