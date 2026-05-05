@@ -140,7 +140,7 @@ bool CgiExecutor::writeInput()
 	{
 		return true;
 	}
-	return fail(500);
+	return fail(502);
 }
 
 bool CgiExecutor::readOutput()

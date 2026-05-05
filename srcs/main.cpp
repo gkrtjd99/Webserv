@@ -38,7 +38,8 @@ int main(int argc, char** argv)
 		if (config.servers.empty())
 			throw std::runtime_error("no server configuration");
 		if (signal(SIGINT, handleShutdownSignal) == SIG_ERR
-				|| signal(SIGTERM, handleShutdownSignal) == SIG_ERR)
+				|| signal(SIGTERM, handleShutdownSignal) == SIG_ERR
+				|| signal(SIGPIPE, SIG_IGN) == SIG_ERR)
 			throw std::runtime_error("signal setup failed");
 		EventLoop eventLoop(config);
 
