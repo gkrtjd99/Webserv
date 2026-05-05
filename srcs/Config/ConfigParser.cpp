@@ -52,6 +52,46 @@ private:
 	IncludeStackScope& operator=(const IncludeStackScope&);
 };
 
+std::string normalizeLexicalPath(const std::string& path)
+{
+	std::vector<std::string> parts;
+	std::size_t begin = 0;
+	bool absolute = !path.empty() && path[0] == '/';
+
+	while (begin <= path.size()) {
+		std::size_t slash = path.find('/', begin);
+		std::size_t end = (slash == std::string::npos) ? path.size() : slash;
+		std::string part = path.substr(begin, end - begin);
+
+		if (part.empty() || part == ".") {
+		} else if (part == "..") {
+			if (!parts.empty() && parts.back() != "..") {
+				parts.pop_back();
+			} else if (!absolute) {
+				parts.push_back(part);
+			}
+		} else {
+			parts.push_back(part);
+		}
+		if (slash == std::string::npos) {
+			break;
+		}
+		begin = slash + 1;
+	}
+
+	std::string result = absolute ? "/" : "";
+	for (std::size_t i = 0; i < parts.size(); ++i) {
+		if (!result.empty() && result[result.size() - 1] != '/') {
+			result += "/";
+		}
+		result += parts[i];
+	}
+	if (result.empty()) {
+		return absolute ? std::string("/") : std::string(".");
+	}
+	return result;
+}
+
 }    // anonymous namespace
 
 ConfigParser::ConfigParser(const std::string& rootPath)
@@ -76,9 +116,7 @@ Config ConfigParser::parse()
 	std::ostringstream oss;
 	oss << ifs.rdbuf();
 
-	char buf[PATH_MAX];
-	std::string canonical = (realpath(rootPath_.c_str(), buf) != 0)
-							? std::string(buf) : rootPath_;
+	std::string canonical = normalizeLexicalPath(rootPath_);
 
 	IncludeStackScope frame(includeStack_, canonical);
 	parseSource(oss.str(), canonical);
@@ -607,13 +645,8 @@ std::string ConfigParser::resolveIncludePath(const std::string& argPath) const
 std::string ConfigParser::canonicalizePath(const std::string& path,
 										const Token& at) const
 {
-	char buf[PATH_MAX];
-	if (realpath(path.c_str(), buf) == 0) {
-		throw ConfigError(ConfigError::SYNTAX, at.file, at.line, at.col,
-						std::string("cannot open included file '") + path
-						+ "'");
-	}
-	return std::string(buf);
+	(void)at;
+	return normalizeLexicalPath(path);
 }
 
 std::string ConfigParser::readFileToString(const std::string& path,

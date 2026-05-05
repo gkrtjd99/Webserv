@@ -6,7 +6,7 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 OUTPUT_FILE="${1:-$ROOT_DIR/compile_commands.json}"
 CXX_BIN="${CXX:-c++}"
 CXX_FLAGS="${CXXFLAGS:--Wall -Wextra -Werror -std=c++98}"
-CPP_FLAGS="${CPPFLAGS:--I$ROOT_DIR/includes -I$ROOT_DIR/includes/HTTP}"
+CPP_FLAGS="${CPPFLAGS:--I$ROOT_DIR/includes -I$ROOT_DIR/includes/Config -I$ROOT_DIR/includes/HTTP -I$ROOT_DIR/includes/Server}"
 
 json_escape()
 {
